@@ -1,5 +1,5 @@
 import redis.asyncio as redis
-from app.core.config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
+import os
 import json
 from typing import Any, Optional
 
@@ -10,14 +10,17 @@ class RedisCache:
     async def init_redis(self):
         """تهيئة اتصال Redis"""
         try:
-            self.redis_client = redis.Redis(
-                host=REDIS_HOST,
-                port=REDIS_PORT,
-                password=REDIS_PASSWORD,
-                decode_responses=True,  # هذا يضمن أن البيانات ترجع كـ string
+            # قراءة رابط الاتصال من متغير البيئة
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+
+            # إنشاء الاتصال من URL
+            self.redis_client = redis.from_url(
+                redis_url,
+                decode_responses=True,
                 socket_connect_timeout=5,
                 retry_on_timeout=True
             )
+
             # اختبار الاتصال
             await self.redis_client.ping()
             print("✅ تم الاتصال بـ Redis بنجاح")
@@ -26,6 +29,7 @@ class RedisCache:
             print(f"❌ فشل الاتصال بـ Redis: {e}")
             self.redis_client = None
             return False
+
     
     async def set(self, key: str, value: Any, expire: int = 86400) -> bool:
         """تخزين بيانات في الكاش لمدة 24 ساعة افتراضياً"""
