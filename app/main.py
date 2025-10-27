@@ -29,3 +29,11 @@ async def health_check():
         "redis": redis_status,
         "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
     }
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://lumivst-frontend-6ij7c1lrv-youssefs-projects-c6c3030a.vercel.app/"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
