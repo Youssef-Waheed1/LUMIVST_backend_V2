@@ -32,7 +32,7 @@ async def health_check():
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://lumivst-frontend-6ij7c1lrv-youssefs-projects-c6c3030a.vercel.app/"],
+    allow_origins=["lumivst-frontend.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
