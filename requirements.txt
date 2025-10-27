@@ -2,6 +2,7 @@ pip>=23.3
 setuptools>=65.0
 wheel>=0.40
 
+
 # الأساسيات
 fastapi==0.104.1
 uvicorn==0.24.0
@@ -22,8 +23,8 @@ httpx==0.25.2
 
 
 # البيانات والتحليل
-numpy==2.1.3
-pandas==2.2.3
+pandas==1.5.3
+numpy==1.24.3
 
 # الطلبات
 requests==2.31.0
@@ -31,8 +32,4 @@ aiohttp==3.9.1
 
 # التحقق
 pydantic==2.5.0
-
-setuptools>=65.0.0
-
-wheel
 
