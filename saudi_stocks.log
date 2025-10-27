@@ -1,0 +1,54 @@
+2025-10-21 07:33:40,737 - saudi_stocks_api - INFO - جلب بيانات الشركات السعودية من: https://api.twelvedata.com/stocks
+2025-10-21 07:33:43,188 - saudi_stocks_api - INFO - تم جلب 544 شركة سعودية
+2025-10-21 07:33:43,257 - saudi_stocks_api - ERROR - خطأ في جلب الشركات السعودية: (psycopg2.errors.UndefinedColumn) column companies.access does not exist
+LINE 1: ...mpanies_isin, companies.cusip AS companies_cusip, companies....
+                                                             ^
+
+[SQL: SELECT companies.id AS companies_id, companies.symbol AS companies_symbol, companies.name AS companies_name, companies.currency AS companies_currency, companies.exchange AS companies_exchange, companies.mic_code AS companies_mic_code, companies.country AS companies_country, companies.type AS companies_type, companies.figi_code AS companies_figi_code, companies.cfi_code AS companies_cfi_code, companies.isin AS companies_isin, companies.cusip AS companies_cusip, companies.access AS companies_access 
+FROM companies 
+WHERE companies.symbol = %(symbol_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'symbol_1': '1010', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-10-21 07:38:35,080 - saudi_stocks_api - INFO - جلب بيانات الشركات السعودية من: https://api.twelvedata.com/stocks
+2025-10-21 07:38:37,234 - saudi_stocks_api - INFO - تم جلب 544 شركة سعودية
+2025-10-21 07:38:38,713 - saudi_stocks_api - INFO - تم حفظ 544 شركة في قاعدة البيانات
+2025-10-21 07:40:52,013 - saudi_stocks_api - INFO - جلب income_statement للشركة 1182 من: https://api.twelvedata.com/income_statement
+2025-10-21 07:40:53,477 - saudi_stocks_api - ERROR - خطأ في استجابة API لـ income_statement: {'code': 404, 'message': '**symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data', 'status': 'error'}
+2025-10-21 07:41:18,582 - saudi_stocks_api - INFO - جلب income_statement للشركة 4001 من: https://api.twelvedata.com/income_statement
+2025-10-21 07:41:20,193 - saudi_stocks_api - ERROR - خطأ في استجابة API لـ income_statement: {'code': 404, 'message': '**symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data', 'status': 'error'}
+2025-10-21 07:48:02,426 - saudi_stocks_api - INFO - جلب income_statement للشركة 1182.SR من: https://api.twelvedata.com/income_statement
+2025-10-21 07:48:02,427 - saudi_stocks_api - INFO - معلمات الاستعلام: {'apikey': '8e06aec81b4d415d905af639ce78449b', 'symbol': '1182.SR', 'exchange': 'XSAU', 'period': 'quarterly'}
+2025-10-21 07:48:04,667 - saudi_stocks_api - ERROR - خطأ في استجابة API لـ income_statement: {'code': 404, 'message': '**symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data', 'status': 'error'}
+2025-10-21 07:48:04,671 - saudi_stocks_api - ERROR - خطأ في جلب قائمة الدخل: رمز السهم 1182.SR غير صحيح. جرب استخدام الرمز الدولي مثل 1182.SR
+2025-10-21 07:49:43,741 - saudi_stocks_api - INFO - جلب بيانات الشركة 2222.SR من: https://api.twelvedata.com/stocks
+2025-10-21 07:49:45,694 - saudi_stocks_api - ERROR - لم يتم العثور على الشركة بالرمز: 2222.SR
+2025-10-21 07:50:00,261 - saudi_stocks_api - INFO - جلب بيانات الشركة 2222.SR من: https://api.twelvedata.com/stocks
+2025-10-21 07:50:01,921 - saudi_stocks_api - ERROR - لم يتم العثور على الشركة بالرمز: 2222.SR
+2025-10-21 07:50:19,686 - saudi_stocks_api - INFO - جلب بيانات الشركة 4161.SR من: https://api.twelvedata.com/stocks
+2025-10-21 07:50:22,605 - saudi_stocks_api - ERROR - لم يتم العثور على الشركة بالرمز: 4161.SR
+2025-10-21 07:53:04,385 - saudi_stocks_api - INFO - جلب بيانات الشركات السعودية من: https://api.twelvedata.com/stocks
+2025-10-21 07:53:07,342 - saudi_stocks_api - INFO - تم جلب 544 شركة سعودية
+2025-10-21 07:53:09,085 - saudi_stocks_api - INFO - تم حفظ 544 شركة في قاعدة البيانات
+2025-10-21 07:54:03,867 - saudi_stocks_api - INFO - جلب income_statement للشركة 1080.SABE.SR من: https://api.twelvedata.com/income_statement
+2025-10-21 07:54:03,868 - saudi_stocks_api - INFO - معلمات الاستعلام: {'apikey': '8e06aec81b4d415d905af639ce78449b', 'symbol': '1080.SABE.SR', 'exchange': 'XSAU', 'period': 'quarterly'}
+2025-10-21 07:54:05,252 - saudi_stocks_api - ERROR - خطأ في استجابة API لـ income_statement: {'code': 404, 'message': '**symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data', 'status': 'error'}
+2025-10-21 07:54:05,256 - saudi_stocks_api - ERROR - خطأ في جلب قائمة الدخل: رمز السهم 1080.SABE غير صحيح. جرب استخدام الرمز الدولي مثل 1182.SR
+2025-10-21 08:03:17,808 - saudi_stocks_api - INFO - جلب income_statement للشركة 4006
+2025-10-21 08:03:17,809 - saudi_stocks_api - INFO - المعلمات: {'symbol': '4006', 'period': 'quarterly', 'outputsize': 6, 'exchange': 'XSAU', 'mic_code': 'XSAU', 'country': 'Saudi Arabia'}
+2025-10-21 08:03:19,328 - saudi_stocks_api - ERROR - خطأ في API: **symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data
+2025-10-21 08:03:19,329 - saudi_stocks_api - INFO - إعادة المحاولة بدون تصفية البورصة للرمز 4006
+2025-10-21 08:03:20,656 - saudi_stocks_api - ERROR - فشل المحاولة الثانية: Unknown error
+2025-10-21 08:03:20,662 - saudi_stocks_api - ERROR - خطأ في جلب قائمة الدخل: Unknown error
+2025-10-21 08:03:37,844 - saudi_stocks_api - INFO - جلب income_statement للشركة 4006
+2025-10-21 08:03:37,845 - saudi_stocks_api - INFO - المعلمات: {'symbol': '4006', 'period': 'quarterly', 'outputsize': 6, 'exchange': 'XSAU', 'mic_code': 'XSAU', 'country': 'Saudi Arabia'}
+2025-10-21 08:03:39,475 - saudi_stocks_api - ERROR - خطأ في API: **symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data
+2025-10-21 08:03:39,476 - saudi_stocks_api - INFO - إعادة المحاولة بدون تصفية البورصة للرمز 4006
+2025-10-21 08:03:41,122 - saudi_stocks_api - ERROR - فشل المحاولة الثانية: Unknown error
+2025-10-21 08:03:41,127 - saudi_stocks_api - ERROR - خطأ في جلب قائمة الدخل: Unknown error
+2025-10-21 08:10:56,586 - saudi_stocks_api - INFO - جلب income_statement للشركة 4006
+2025-10-21 08:10:56,587 - saudi_stocks_api - INFO - المعلمات: {'symbol': '4006', 'period': 'quarterly', 'outputsize': 6, 'start_date': '2020-01-01', 'end_date': '2020-01-10', 'exchange': 'XSAU', 'mic_code': 'XSAU', 'country': 'Saudi Arabia'}
+2025-10-21 08:10:58,792 - saudi_stocks_api - ERROR - خطأ في API: **symbol** or **figi** parameter is missing or invalid. Please provide a valid symbol according to API documentation: https://twelvedata.com/docs#reference-data
+2025-10-21 08:10:58,794 - saudi_stocks_api - INFO - إعادة المحاولة بدون تصفية البورصة للرمز 4006
+2025-10-21 08:11:00,408 - saudi_stocks_api - ERROR - فشل المحاولة الثانية: Unknown error
+2025-10-21 08:11:00,413 - saudi_stocks_api - ERROR - خطأ في جلب قائمة الدخل: Unknown error
