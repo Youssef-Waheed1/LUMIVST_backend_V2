@@ -8,7 +8,7 @@ app = FastAPI(title="Saudi Stocks API")
 # ⬇️ ضع الـ CORS middleware بعد تعريف app وقبل الـ routes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app"],  
+    allow_origins=["https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
