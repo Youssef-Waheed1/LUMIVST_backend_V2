@@ -1,8 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware  # ⬅️ لازم تستورد الـ CORS
 from app.core.redis import redis_cache
 from app.api.routes import companies, financials, cache
 
 app = FastAPI(title="Saudi Stocks API")
+
+# ⬇️ ضع الـ CORS middleware بعد تعريف app وقبل الـ routes
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # إضافة الـ routes
 app.include_router(companies.router)
@@ -29,11 +39,3 @@ async def health_check():
         "redis": redis_status,
         "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
     }
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://lumivst-frontend.vercel.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
