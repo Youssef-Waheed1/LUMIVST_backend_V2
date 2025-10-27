@@ -22,8 +22,8 @@ httpx==0.25.2
 
 
 # البيانات والتحليل
-pandas==1.5.3
-numpy==1.24.3
+numpy==2.1.3
+pandas==2.2.3
 
 # الطلبات
 requests==2.31.0
@@ -35,3 +35,4 @@ pydantic==2.5.0
 setuptools>=65.0.0
 
 wheel
+
