@@ -1,16 +1,43 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
-from app.core.config import DATABASE_URL  # ⭐ استيراد من config
 
-# استخدام DATABASE_URL من الإعدادات
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:youssef505050@localhost:5432/lumivst_db")
+
+# ⭐ زيادة حجم الـ connection pool
 engine = create_engine(
     DATABASE_URL,
-    pool_size=20,
-    max_overflow=30,
+    pool_size=20,           # ⭐ زيادة من 5 لـ 20
+    max_overflow=30,        # ⭐ زيادة من 10 لـ 30  
     pool_timeout=30,
-    pool_recycle=1800
+    pool_recycle=1800       # ⭐ إعادة تدوير الاتصالات كل 30 دقيقة
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -33,4 +60,4 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        db.close()  # ⭐ التأكد من إغلاق الاتصال

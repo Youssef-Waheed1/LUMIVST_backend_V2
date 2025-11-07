@@ -20,7 +20,7 @@ class AppConfig:
         else:
             self.cors_origins = [
                 # النطاقات الجديدة من Vercel deployment
-                "https://lumivst-frontend-v2-139jc57pc-youssefs-projects-c6c3030a.vercel.app",
+                "https://lumivst-frontend-v2-git-main-youssefs-projects-c6c3030a.vercel.app",
                 "https://lumivst-frontend-v2.vercel.app",
                 # النطاقات القديمة (للتوافق)
                 "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
