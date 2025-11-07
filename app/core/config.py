@@ -17,6 +17,12 @@ REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}")
 CACHE_EXPIRE_SECONDS = int(os.getenv("CACHE_EXPIRE_SECONDS", 86400))  # 24 ساعة
 STOCK_PRICE_CACHE_SECONDS = int(os.getenv("STOCK_PRICE_CACHE_SECONDS", 300))  # 5 دقائق
 
+# -------------------------------
+STATISTICS_CACHE_EXPIRY: int = 3600  # 1 hour
+STATISTICS_CREDITS_COST: int = 50
+# --------------------------------
+
+
 # إعدادات التسجيل
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 

@@ -1,17 +1,18 @@
 import redis.asyncio as redis
 import os
 import json
-from typing import Any, Optional
+from typing import Any, Optional, List
 
 class RedisCache:
     def __init__(self):
         self.redis_client = None
+        self.is_connected = False
     
     async def init_redis(self):
         """تهيئة اتصال Redis"""
         try:
             # قراءة رابط الاتصال من متغير البيئة
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:7424")
 
             # إنشاء الاتصال من URL
             self.redis_client = redis.from_url(
@@ -23,17 +24,24 @@ class RedisCache:
 
             # اختبار الاتصال
             await self.redis_client.ping()
+            self.is_connected = True
             print("✅ تم الاتصال بـ Redis بنجاح")
             return True
         except Exception as e:
             print(f"❌ فشل الاتصال بـ Redis: {e}")
             self.redis_client = None
+            self.is_connected = False
             return False
 
+    async def ensure_connection(self):
+        """التأكد من وجود اتصال نشط"""
+        if not self.is_connected or not self.redis_client:
+            return await self.init_redis()
+        return True
     
     async def set(self, key: str, value: Any, expire: int = 86400) -> bool:
         """تخزين بيانات في الكاش لمدة 24 ساعة افتراضياً"""
-        if not self.redis_client:
+        if not await self.ensure_connection():
             return False
             
         try:
@@ -51,7 +59,7 @@ class RedisCache:
     
     async def get(self, key: str) -> Optional[Any]:
         """جلب بيانات من الكاش"""
-        if not self.redis_client:
+        if not await self.ensure_connection():
             return None
             
         try:
@@ -72,7 +80,7 @@ class RedisCache:
     
     async def delete(self, key: str) -> bool:
         """حذف بيانات من الكاش"""
-        if not self.redis_client:
+        if not await self.ensure_connection():
             return False
             
         try:
@@ -84,7 +92,7 @@ class RedisCache:
     
     async def exists(self, key: str) -> bool:
         """التحقق من وجود مفتاح في الكاش"""
-        if not self.redis_client:
+        if not await self.ensure_connection():
             return False
             
         try:
@@ -95,7 +103,7 @@ class RedisCache:
     
     async def flush_all(self) -> bool:
         """مسح كل الكاش"""
-        if not self.redis_client:
+        if not await self.ensure_connection():
             return False
             
         try:
@@ -105,6 +113,33 @@ class RedisCache:
         except Exception as e:
             print(f"❌ خطأ في مسح الكاش: {e}")
             return False
+
+    async def keys(self, pattern: str) -> List[str]:
+        """الحصول على جميع المفاتيح التي تطابق النمط"""
+        if not await self.ensure_connection():
+            print("❌ Redis غير متصل")
+            return []  # إرجاع قائمة فارغة بدلاً من None
+        
+        try:
+            keys = await self.redis_client.keys(pattern)
+            return keys or []  # ✅ إرجاع قائمة فارغة إذا كانت None
+        except Exception as e:
+            print(f"❌ خطأ في جلب المفاتيح للنمط {pattern}: {e}")
+            return []  # ✅ إرجاع قائمة فارغة بدلاً من None
+
+    async def scan_iter(self, pattern: str):
+        """استخدام SCAN للحصول على المفاتيح (أفضل للأداء)"""
+        if not await self.ensure_connection():
+            return []
+        
+        try:
+            keys = []
+            async for key in self.redis_client.scan_iter(match=pattern):
+                keys.append(key)
+            return keys
+        except Exception as e:
+            print(f"❌ خطأ في SCAN للنمط {pattern}: {e}")
+            return []
 
 # إنشاء نسخة عامة
 redis_cache = RedisCache()

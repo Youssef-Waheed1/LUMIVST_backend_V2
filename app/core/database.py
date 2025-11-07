@@ -1,47 +1,63 @@
-import os
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import redis
-from datetime import datetime, timedelta
+import os
 
-# قراءة رابط قاعدة البيانات من متغير البيئة (Railway)
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:youssef505050@localhost:5432/lumivst_db")
 
-# إنشاء engine لقاعدة البيانات
-engine = create_engine(DATABASE_URL)
+# ⭐ زيادة حجم الـ connection pool
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=20,           # ⭐ زيادة من 5 لـ 20
+    max_overflow=30,        # ⭐ زيادة من 10 لـ 30  
+    pool_timeout=30,
+    pool_recycle=1800       # ⭐ إعادة تدوير الاتصالات كل 30 دقيقة
+)
 
-# إنشاء SessionLocal للتعامل مع قاعدة البيانات
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# إنشاء Base للنماذج
 Base = declarative_base()
 
-# Dependency للحصول على جلسة قاعدة البيانات
+# استيراد الـ models بعد تعريف Base
+from app.models.profile import CompanyProfile
+from app.models.quote import StockQuote
+
+def create_tables():
+    """إنشاء الجداول في قاعدة البيانات"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ تم إنشاء الجداول في PostgreSQL بنجاح")
+    except Exception as e:
+        print(f"❌ خطأ في إنشاء الجداول: {e}")
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close()
-
-# ✅ إعداد Redis من متغير البيئة REDIS_URL
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-
-try:
-    redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-    redis_client.ping()
-    print("✅ تم الاتصال بـ Redis بنجاح")
-except redis.ConnectionError:
-    redis_client = None
-    print("❌ فشل الاتصال بـ Redis. سيتم العمل بدون كاش")
-
-# دالة للتحقق من اتصال Redis
-def is_redis_available():
-    if not redis_client:
-        return False
-    try:
-        redis_client.ping()
-        return True
-    except redis.ConnectionError:
-        return False
+        db.close()  # ⭐ التأكد من إغلاق الاتصال
