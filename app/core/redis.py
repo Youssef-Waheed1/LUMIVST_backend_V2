@@ -2,6 +2,7 @@ import redis.asyncio as redis
 import os
 import json
 from typing import Any, Optional, List
+from app.core.config import REDIS_URL  # ⭐ استيراد من config
 
 class RedisCache:
     def __init__(self):
@@ -11,12 +12,9 @@ class RedisCache:
     async def init_redis(self):
         """تهيئة اتصال Redis"""
         try:
-            # قراءة رابط الاتصال من متغير البيئة
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:7424")
-
-            # إنشاء الاتصال من URL
+            # استخدام REDIS_URL من الإعدادات
             self.redis_client = redis.from_url(
-                redis_url,
+                REDIS_URL,  # ⭐ استخدام المتغير من config
                 decode_responses=True,
                 socket_connect_timeout=5,
                 retry_on_timeout=True
@@ -25,7 +23,7 @@ class RedisCache:
             # اختبار الاتصال
             await self.redis_client.ping()
             self.is_connected = True
-            print("✅ تم الاتصال بـ Redis بنجاح")
+            print(f"✅ تم الاتصال بـ Redis بنجاح: {REDIS_URL}")
             return True
         except Exception as e:
             print(f"❌ فشل الاتصال بـ Redis: {e}")
@@ -33,8 +31,8 @@ class RedisCache:
             self.is_connected = False
             return False
 
+    # باقي الدوال تبقى كما هي...
     async def ensure_connection(self):
-        """التأكد من وجود اتصال نشط"""
         if not self.is_connected or not self.redis_client:
             return await self.init_redis()
         return True
