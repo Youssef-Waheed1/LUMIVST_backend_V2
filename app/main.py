@@ -23,8 +23,7 @@ class AppConfig:
                 "https://lumivst-frontend-v2-git-main-youssefs-projects-c6c3030a.vercel.app",
                 "https://lumivst-frontend-v2.vercel.app",
                 # النطاقات القديمة (للتوافق)
-                "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
-                "https://lumivst-frontend.vercel.app",
+
                 # التطوير المحلي
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",
@@ -67,7 +66,8 @@ class Application:
             origins.extend([
                 "http://127.0.0.1:3000",
                 "http://localhost:3001",
-                "http://localhost:5173",  # Vite dev server
+                "http://localhost:5173",
+                "https://lumivst-frontend-v2.vercel.app"  # Vite dev server
             ])
         
         # تنظيف وإزالة التكرارات
