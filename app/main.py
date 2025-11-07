@@ -1,5 +1,3 @@
-
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.redis import redis_cache
@@ -15,11 +13,22 @@ class AppConfig:
         self.description = "API for Saudi Stock Market data with caching"
         self.version = "1.0.0"
         
-        self.cors_origins = [
-            "lumivst-frontend-v2-139jc57pc-youssefs-projects-c6c3030a.vercel.app",
-            "lumivst-frontend-v2.vercel.app",
-            "http://localhost:3000",
-        ]
+        # الحصول على النطاقات من متغيرات البيئة أو استخدام القيم الافتراضية
+        cors_env = os.getenv("CORS_ORIGINS", "")
+        if cors_env:
+            self.cors_origins = cors_env.split(",")
+        else:
+            self.cors_origins = [
+                # النطاقات الجديدة من Vercel deployment
+                "https://lumivst-frontend-v2-139jc57pc-youssefs-projects-c6c3030a.vercel.app",
+                "https://lumivst-frontend-v2.vercel.app",
+                # النطاقات القديمة (للتوافق)
+                "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
+                "https://lumivst-frontend.vercel.app",
+                # التطوير المحلي
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ]
         
         self.routes = [
             {"module": "stocks", "router": "router", "prefix": None},
@@ -53,11 +62,16 @@ class Application:
         """إعداد CORS"""
         origins = self.config.cors_origins.copy()
         
+        # إضافة نطاقات إضافية للبيئة التطويرية
         if os.getenv("ENVIRONMENT") == "development":
             origins.extend([
                 "http://127.0.0.1:3000",
                 "http://localhost:3001",
+                "http://localhost:5173",  # Vite dev server
             ])
+        
+        # تنظيف وإزالة التكرارات
+        origins = list(set(origins))
         
         self.app.add_middleware(
             CORSMiddleware,
@@ -66,6 +80,8 @@ class Application:
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["*"],
         )
+        
+        print(f"✅ تم إعداد CORS للنطاقات: {origins}")
     
     def _setup_routes(self):
         """إعداد الـ Routes"""
@@ -109,19 +125,23 @@ class Application:
         
         @self.app.get("/health")
         async def health_check():
+            """فحص صحة التطبيق والكاش"""
+            import datetime
+            
             redis_status = "connected" if redis_cache.redis_client else "disconnected"
             return {
                 "status": "healthy",
                 "redis": redis_status,
                 "app": self.config.title,
+                "version": self.config.version,
+                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "environment": os.getenv("ENVIRONMENT", "production"),
                 "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
             }
 
 # إنشاء التطبيق
 config = AppConfig()
 app = Application(config).app
-
-
 
 
 
