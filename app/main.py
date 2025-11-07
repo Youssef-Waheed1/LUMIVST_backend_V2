@@ -27,7 +27,7 @@ class AppConfig:
                 "https://*.vercel.app",
                 
                 # ⭐⭐ اسمح للـ backend نفسه
-                "https://lumivstbackendv2-production.up.railway.app",
+                "web-production-e66c2.up.railway.app",
                 
                 # النطاقات القديمة (للتوافق)
                 "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
