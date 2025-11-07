@@ -1,25 +1,5 @@
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.redis import redis_cache
@@ -36,8 +16,8 @@ class AppConfig:
         self.version = "1.0.0"
         
         self.cors_origins = [
-            "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
-            "https://lumivst-frontend.vercel.app",
+            "lumivst-frontend-v2-139jc57pc-youssefs-projects-c6c3030a.vercel.app",
+            "lumivst-frontend-v2.vercel.app",
             "http://localhost:3000",
         ]
         
