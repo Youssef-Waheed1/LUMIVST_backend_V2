@@ -23,7 +23,12 @@ class FinancialRepository:
         return query.order_by(desc(IncomeStatement.fiscal_date)).limit(limit).all()
 
     async def save_income_statement(self, symbol: str, country: str, income_data: Dict[str, Any]) -> IncomeStatement:
-        # التحقق من وجود البيانات مسبقاً مع البلد
+        # استخراج الحقول المعروفة فقط
+        known_fields = {k: v for k, v in income_data.items() if hasattr(IncomeStatement, k)}
+        
+        # تخزين البيانات الإضافية في حقل additional_data
+        additional_data = {k: v for k, v in income_data.items() if not hasattr(IncomeStatement, k)}
+        
         existing = self.db.query(IncomeStatement).filter(
             IncomeStatement.symbol == symbol,
             IncomeStatement.country == country,
@@ -32,13 +37,19 @@ class FinancialRepository:
         
         if existing:
             # تحديث البيانات الموجودة
-            for key, value in income_data.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, value)
+            for key, value in known_fields.items():
+                setattr(existing, key, value)
+            if additional_data:
+                existing.additional_data = additional_data
             existing.updated_at = datetime.utcnow()
         else:
-            # إنشاء سجل جديد مع البلد
-            existing = IncomeStatement(symbol=symbol, country=country, **income_data)
+            # إنشاء سجل جديد
+            existing = IncomeStatement(
+                symbol=symbol, 
+                country=country, 
+                **known_fields,
+                additional_data=additional_data if additional_data else None
+            )
             self.db.add(existing)
         
         self.db.commit()
@@ -53,15 +64,28 @@ class FinancialRepository:
         return saved_records
 
     # Balance Sheet Operations مع البلد
+    # Balance Sheet Operations مع البلد
     async def get_balance_sheet(self, symbol: str, country: str = "Saudi Arabia", period: str = "annual", limit: int = 6) -> List[BalanceSheet]:
         query = self.db.query(BalanceSheet).filter(
             BalanceSheet.symbol == symbol,
             BalanceSheet.country == country
         )
         
+        # ✅ أضف هذا الـ filter المفقود
+        if period == "quarterly":
+            query = query.filter(BalanceSheet.quarter.isnot(None))
+        else:
+            query = query.filter(BalanceSheet.quarter.is_(None))
+            
         return query.order_by(desc(BalanceSheet.fiscal_date)).limit(limit).all()
 
     async def save_balance_sheet(self, symbol: str, country: str, balance_data: Dict[str, Any]) -> BalanceSheet:
+        # استخراج الحقول المعروفة فقط
+        known_fields = {k: v for k, v in balance_data.items() if hasattr(BalanceSheet, k)}
+        
+        # تخزين البيانات الإضافية في حقل additional_data
+        additional_data = {k: v for k, v in balance_data.items() if not hasattr(BalanceSheet, k)}
+        
         existing = self.db.query(BalanceSheet).filter(
             BalanceSheet.symbol == symbol,
             BalanceSheet.country == country,
@@ -69,12 +93,20 @@ class FinancialRepository:
         ).first()
         
         if existing:
-            for key, value in balance_data.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, value)
+            # تحديث البيانات الموجودة
+            for key, value in known_fields.items():
+                setattr(existing, key, value)
+            if additional_data:
+                existing.additional_data = additional_data
             existing.updated_at = datetime.utcnow()
         else:
-            existing = BalanceSheet(symbol=symbol, country=country, **balance_data)
+            # إنشاء سجل جديد
+            existing = BalanceSheet(
+                symbol=symbol, 
+                country=country, 
+                **known_fields,
+                additional_data=additional_data if additional_data else None
+            )
             self.db.add(existing)
         
         self.db.commit()
@@ -103,6 +135,12 @@ class FinancialRepository:
         return query.order_by(desc(CashFlow.fiscal_date)).limit(limit).all()
 
     async def save_cash_flow(self, symbol: str, country: str, cash_flow_data: Dict[str, Any]) -> CashFlow:
+        # استخراج الحقول المعروفة فقط
+        known_fields = {k: v for k, v in cash_flow_data.items() if hasattr(CashFlow, k)}
+        
+        # تخزين البيانات الإضافية في حقل additional_data
+        additional_data = {k: v for k, v in cash_flow_data.items() if not hasattr(CashFlow, k)}
+        
         existing = self.db.query(CashFlow).filter(
             CashFlow.symbol == symbol,
             CashFlow.country == country,
@@ -110,12 +148,20 @@ class FinancialRepository:
         ).first()
         
         if existing:
-            for key, value in cash_flow_data.items():
-                if hasattr(existing, key):
-                    setattr(existing, key, value)
+            # تحديث البيانات الموجودة
+            for key, value in known_fields.items():
+                setattr(existing, key, value)
+            if additional_data:
+                existing.additional_data = additional_data
             existing.updated_at = datetime.utcnow()
         else:
-            existing = CashFlow(symbol=symbol, country=country, **cash_flow_data)
+            # إنشاء سجل جديد
+            existing = CashFlow(
+                symbol=symbol, 
+                country=country, 
+                **known_fields,
+                additional_data=additional_data if additional_data else None
+            )
             self.db.add(existing)
         
         self.db.commit()

@@ -69,7 +69,6 @@ class FinancialCache:
         print(f"🌐 جلب التدفقات النقدية من API: {symbol} - {country}")
         return await get_cash_flow(symbol, country=country, period=period, limit=limit)
         
-        return await get_cash_flow(symbol, country=country, period=period, limit=limit)
     
     def _convert_db_income_to_api_format(self, db_records: list) -> Dict[str, Any]:
         """تحويل بيانات قائمة الدخل من قاعدة البيانات إلى تنسيق API"""
