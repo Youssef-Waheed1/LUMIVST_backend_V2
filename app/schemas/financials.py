@@ -14,8 +14,7 @@ class NonOperatingInterest(BaseModel):
 
 class IncomeStatementBase(BaseModel):
     fiscal_date: date
-    quarter: Optional[int] = None
-    year: int
+    quarter: Optional[str] = None  # اجعله نص زي المودل    year: int
     sales: Optional[float] = None
     cost_of_goods: Optional[float] = None
     gross_profit: Optional[float] = None

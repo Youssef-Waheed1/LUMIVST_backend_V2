@@ -1,21 +1,18 @@
-import json
-import math
+# app/services/cache/stock_cache.py
+
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from sqlalchemy.orm import Session
+
 from app.core.redis import redis_cache
 from app.core.database import get_db
+from app.models.profile import CompanyProfile
+from app.models.quote import StockQuote
 from app.services.twelve_data.profile_service import get_company_profile
 from app.services.twelve_data.quote_service import get_stock_quote, _calculate_turnover
-from app.schemas.stock import StockResponse
 
-def clean_symbol(symbol: str) -> str:
-    """تنظيف الرمز للإنتاج"""
-    if not symbol:
-        return ""
-    return ''.join(filter(str.isdigit, symbol)).upper()
-
-# ⭐ قائمة الرموز السعودية
+# قائمة الرموز السعودية
 SAUDI_STOCKS = {
                         "1010", "1020", "1030", "1050", "1060", "1080", "1111", "1120", "1140", 
                         "1150", "1180", "1182", "1183", "1201", "1202", "1210", "1211", "1212",
@@ -45,533 +42,824 @@ SAUDI_STOCKS = {
                         "7201", "7202", "7203", "7204", "7211", "8010", "8012", "8020", "8030", 
                         "8040", "8050", "8060", "8070", "8100", "8120", "8150", "8160", "8170", 
                         "8180", "8190", "8200", "8210", "8230", "8240", "8250", "8260", "8280", 
-                        "8300", "8310", "8311", "8313","6004","1835","1834","6002","4051","6001",
+                        "8300", "8310", "8311","8313","6004","1835","1834","6002","4051","6001",
                         "4021","7040","2084"
             
 }
 
+def clean_symbol(symbol: str) -> str:
+    return ''.join(filter(str.isdigit, symbol)).upper()
+
 class StockCache:
     def __init__(self):
-        self.cache_prefix = "tadawul_stocks"
-        self.cache_expire = 300
-        self.all_cache_expire = 600
-        self.db_cache_expire = 3600
-    
-    def _get_cache_key(self, page: int, limit: int, country: str = "Saudi Arabia") -> str:
-        return f"{self.cache_prefix}:page:{page}:limit:{limit}:country:{country}"
-    
-    def _get_all_cache_key(self, country: str = "Saudi Arabia") -> str:
-        return f"{self.cache_prefix}:all:country:{country}"
-    
-    def _get_symbol_cache_key(self, symbol: str, country: str = "Saudi Arabia") -> str:
-        clean_symbol_val = clean_symbol(symbol)
-        return f"{self.cache_prefix}:symbol:{clean_symbol_val}:country:{country}"
-    
-    def _get_bulk_cache_key(self, symbols: List[str], country: str = "Saudi Arabia") -> str:
-        """مفتاح cache جديد للطلبات الجماعية"""
-        symbols_hash = hash(tuple(sorted(symbols)))
-        return f"{self.cache_prefix}:bulk:{symbols_hash}:country:{country}"
-    
-    async def _get_db_connection(self):
-        """الحصول على اتصال قاعدة بيانات بشكل آمن"""
+        self.cache_expire = 100  # 5 دقائق
+        self.db_cache_expire = 3600  # 1 ساعة
+        
+
+    async def _get_db_session(self) -> Session:
+        """الحصول على جلسة DB"""
+        return next(get_db())
+
+    async def get_stock_data(self, symbol: str, country: str = "Saudi Arabia") -> Optional[Dict[str, Any]]:
+        """
+        🎯 الدالة الرئيسية - الترتيب: DB → Redis → API
+        """
+        clean_sym = clean_symbol(symbol)
+        
+        # 1. جرب DB أولاً
+        stock_data = await self._fetch_from_db(clean_sym)
+        if stock_data:
+            await self._save_to_redis(clean_sym, stock_data, country)
+            return stock_data
+        
+        # 2. جرب Redis ثانياً
+        stock_data = await self._fetch_from_redis(clean_sym, country)
+        if stock_data:
+            return stock_data
+        
+        # 3. API كملاحة أخيرة
+        stock_data = await self._fetch_from_api(clean_sym, country)
+        if stock_data:
+            await self._save_to_db_and_redis(clean_sym, stock_data, country)
+        
+        return stock_data
+
+    async def _fetch_from_db(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """🔍 جلب من PostgreSQL"""
         try:
-            return next(get_db())
-        except Exception as e:
-            print(f"❌ خطأ في الاتصال بقاعدة البيانات: {e}")
+            db = await self._get_db_session()
+            
+            profile = db.query(CompanyProfile).filter_by(symbol=symbol).first()
+            quote = db.query(StockQuote).filter_by(symbol=symbol).first()
+            
+            if profile and quote:
+                return self._merge_profile_quote(profile, quote)
+            
             return None
-    
-    async def _save_to_postgresql(self, symbol: str, profile_data: Dict, quote_data: Dict):
-        """حفظ البيانات في PostgreSQL"""
-        db = None
-        try:
-            db = await self._get_db_connection()
-            if not db:
-                return
-                
-            # حفظ Profile
-            if profile_data:
-                from app.models.profile import CompanyProfile
-                existing_profile = db.query(CompanyProfile).filter(CompanyProfile.symbol == symbol).first()
-                
-                if existing_profile:
-                    # تحديث البيانات
-                    for key, value in profile_data.items():
-                        if hasattr(existing_profile, key) and value is not None:
-                            setattr(existing_profile, key, value)
-                else:
-                    # إنشاء جديد
-                    profile = CompanyProfile(
-                        symbol=symbol,
-                        name=profile_data.get("name", "N/A"),
-                        exchange=profile_data.get("exchange", "Tadawul"),
-                        sector=profile_data.get("sector"),
-                        industry=profile_data.get("industry"),
-                        employees=profile_data.get("employees"),
-                        website=profile_data.get("website"),
-                        description=profile_data.get("description"),
-                        state=profile_data.get("state"),
-                        country=profile_data.get("country", "Saudi Arabia")
-                    )
-                    db.add(profile)
-            
-            # حفظ Quote - ⭐⭐ التصحيح هنا
-            if quote_data:
-                from app.models.quote import StockQuote
-                existing_quote = db.query(StockQuote).filter(StockQuote.symbol == symbol).first()
-                
-                # استخراج بيانات 52 أسبوع
-                fifty_two_week = quote_data.get("fifty_two_week", {})
-                
-                quote_update_data = {
-                    "symbol": symbol,
-                    "currency": quote_data.get("currency", "SAR"),
-                    "datetime": quote_data.get("datetime"),
-                    "timestamp": quote_data.get("timestamp"),
-                    "open": quote_data.get("open"),
-                    "high": quote_data.get("high"),
-                    "low": quote_data.get("low"),
-                    "close": quote_data.get("close"),
-                    "volume": quote_data.get("volume"),
-                    "previous_close": quote_data.get("previous_close"),
-                    "change": quote_data.get("change"),
-                    "percent_change": quote_data.get("percent_change"),
-                    "average_volume": quote_data.get("average_volume"),
-                    "is_market_open": quote_data.get("is_market_open", False),
-                    
-                    # ⭐⭐ حفظ كل حقول 52 أسبوع
-                    "fifty_two_week_low": self._parse_float(fifty_two_week.get("low")),
-                    "fifty_two_week_high": self._parse_float(fifty_two_week.get("high")),
-                    "fifty_two_week_low_change": self._parse_float(fifty_two_week.get("low_change")),
-                    "fifty_two_week_high_change": self._parse_float(fifty_two_week.get("high_change")),
-                    "fifty_two_week_low_change_percent": self._parse_float(fifty_two_week.get("low_change_percent")),
-                    "fifty_two_week_high_change_percent": self._parse_float(fifty_two_week.get("high_change_percent")),
-                    "fifty_two_week_range": fifty_two_week.get("range")
-                }
-                
-                if existing_quote:
-                    # تحديث البيانات
-                    for key, value in quote_update_data.items():
-                        if hasattr(existing_quote, key) and value is not None:
-                            setattr(existing_quote, key, value)
-                else:
-                    # إنشاء جديد
-                    quote = StockQuote(**quote_update_data)
-                    db.add(quote)
-            
-            db.commit()
-            print(f"💾 تم حفظ بيانات {symbol} في PostgreSQL")
-            
         except Exception as e:
-            print(f"❌ خطأ في حفظ البيانات في PostgreSQL: {e}")
-            if db:
-                db.rollback()
+            print(f"⚠️ DB Error: {e}")
+            return None
         finally:
-            if db:
-                db.close()
+            db.close()
 
-    def _parse_float(self, value):
-        """دالة مساعدة لتحويل القيم إلى float"""
-        if value in [None, "N/A", ""]:
-            return None
+    async def _fetch_from_redis(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+        """🔍 جلب من Redis"""
         try:
-            return float(value)
-        except (ValueError, TypeError):
+            cache_key = f"tadawul:stock:{symbol}:{country}"
+            return await redis_cache.get(cache_key)
+        except:
             return None
 
-    async def _combine_stock_data(self, profile_data: Dict[str, Any], quote_data: Dict[str, Any]) -> Dict[str, Any]:
-        """دمج بيانات Profile و Quote"""
-        
-        def parse_value(value):
-            if value in [None, "N/A", ""]:
-                return None
-            return value
-        
-        def parse_float(value):
-            if value in [None, "N/A", ""]:
-                return None
-            try:
-                return float(value)
-            except (ValueError, TypeError):
-                return None
-        
-        # ⭐⭐ بناء بيانات 52 أسبوع من قاعدة البيانات
-        fifty_two_week_data = {
-            "low": parse_float(quote_data.get("fifty_two_week_low")),
-            "high": parse_float(quote_data.get("fifty_two_week_high")),
-            "low_change": parse_float(quote_data.get("fifty_two_week_low_change")),
-            "high_change": parse_float(quote_data.get("fifty_two_week_high_change")),
-            "low_change_percent": parse_float(quote_data.get("fifty_two_week_low_change_percent")),
-            "high_change_percent": parse_float(quote_data.get("fifty_two_week_high_change_percent")),
-            "range": parse_value(quote_data.get("fifty_two_week_range"))
-        }
-        
-        return {
-            "symbol": profile_data.get("symbol") or quote_data.get("symbol"),
-            "name": profile_data.get("name", "N/A"),
-            "exchange": profile_data.get("exchange", "Tadawul"),
-            "sector": parse_value(profile_data.get("sector")),
-            "industry": parse_value(profile_data.get("industry")),
-            "employees": parse_value(profile_data.get("employees")),
-            "website": parse_value(profile_data.get("website")),
-            "description": parse_value(profile_data.get("description")),
-            "state": parse_value(profile_data.get("state")),
-            "country": parse_value(profile_data.get("country", "Saudi Arabia")),
-            "currency": quote_data.get("currency", "SAR"),
-            "price": parse_float(quote_data.get("close")),
-            "change": parse_float(quote_data.get("change")),
-            "change_percent": parse_float(quote_data.get("percent_change")),
-            "previous_close": parse_float(quote_data.get("previous_close")),
-            "volume": parse_value(quote_data.get("volume")),
-            "turnover": _calculate_turnover(quote_data.get("volume"), quote_data.get("close")),
-            "open": parse_float(quote_data.get("open")),
-            "high": parse_float(quote_data.get("high")),
-            "low": parse_float(quote_data.get("low")),
-            "average_volume": parse_value(quote_data.get("average_volume")),
-            "is_market_open": quote_data.get("is_market_open", False),
+    async def _fetch_from_api(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+        """🌐 جلب من Twelve Data API"""
+        try:
+            profile, quote = await asyncio.gather(
+                get_company_profile(symbol, country),
+                get_stock_quote(symbol, country),
+                return_exceptions=True
+            )
             
-            # ⭐⭐ التصحيح: استخدام البيانات المدمجة
-            "fifty_two_week": fifty_two_week_data,
-            "fifty_two_week_range": parse_value(quote_data.get("fifty_two_week_range")),
-            "fifty_two_week_low": parse_float(quote_data.get("fifty_two_week_low")),
-            "fifty_two_week_high": parse_float(quote_data.get("fifty_two_week_high")),
-            "fifty_two_week_low_change": parse_float(quote_data.get("fifty_two_week_low_change")),
-            "fifty_two_week_high_change": parse_float(quote_data.get("fifty_two_week_high_change")),
-            "fifty_two_week_low_change_percent": parse_float(quote_data.get("fifty_two_week_low_change_percent")),
-            "fifty_two_week_high_change_percent": parse_float(quote_data.get("fifty_two_week_high_change_percent")),
+            if isinstance(profile, Exception) or isinstance(quote, Exception):
+                return None
+            
+            return self._build_stock_data(symbol, profile, quote)
+        except:
+            return None
+
+    def _merge_profile_quote(self, profile: CompanyProfile, quote: StockQuote) -> Dict[str, Any]:
+        """دمج بيانات DB إلى شكل موحد مع RS Ratings و Change%"""
+        return {
+            "symbol": profile.symbol,
+            "name": profile.name or profile.symbol,
+            "exchange": profile.exchange or "Tadawul",
+            "sector": profile.sector,
+            "industry": profile.industry,
+            "employees": profile.employees,
+            "website": profile.website,
+            "country": profile.country or "Saudi Arabia",
+            "state": profile.state,
+            
+            "currency": quote.currency or "SAR",
+            "price": quote.close,
+            "change": quote.change,
+            "change_percent": quote.percent_change,
+            "previous_close": quote.previous_close,
+            "volume": quote.volume,
+            "turnover": _calculate_turnover(quote.volume, quote.close),
+            "open": quote.open,
+            "high": quote.high,
+            "low": quote.low,
+            "average_volume": quote.average_volume,
+            "is_market_open": quote.is_market_open,
+            
+            "fifty_two_week": {
+                "low": quote.fifty_two_week_low,
+                "high": quote.fifty_two_week_high,
+                "low_change": quote.fifty_two_week_low_change,
+                "high_change": quote.fifty_two_week_high_change,
+                "low_change_percent": quote.fifty_two_week_low_change_percent,
+                "high_change_percent": quote.fifty_two_week_high_change_percent,
+                "range": quote.fifty_two_week_range
+            },
+            "fifty_two_week_low": quote.fifty_two_week_low,
+            "fifty_two_week_high": quote.fifty_two_week_high,
+            
+            # 🎯 RS Ratings
+            "rs_12m": quote.rs_12m,
+            "rs_9m": quote.rs_9m,
+            "rs_6m": quote.rs_6m,
+            "rs_3m": quote.rs_3m,
+            "rs_1m": quote.rs_1m,
+            "rs_2w": quote.rs_2w,
+            "rs_1w": quote.rs_1w,
+            
+            # ⭐ Change% لكل فترة
+            "change_12m": quote.change_12m,
+            "change_9m": quote.change_9m,
+            "change_6m": quote.change_6m,
+            "change_3m": quote.change_3m,
+            "change_1m": quote.change_1m,
+            "change_2w": quote.change_2w,
+            "change_1w": quote.change_1w,
             
             "last_updated": datetime.now().isoformat()
         }
-    
-    async def clear_symbols_cache(self, symbols: List[str], clear_db: bool = False):
-        """مسح كاش رموز محددة"""
-        cleared_count = 0
+
+    def _build_stock_data(self, symbol: str, profile: dict, quote: dict) -> Dict[str, Any]:
+        """بناء البيانات من API response"""
+        return {
+            "symbol": symbol,
+            "name": profile.get("name", symbol) if profile else symbol,
+            "exchange": "Tadawul",
+            "sector": profile.get("sector"),
+            "industry": profile.get("industry"),
+            "currency": quote.get("currency", "SAR") if quote else "SAR",
+            "price": quote.get("close"),
+            "change": quote.get("change"),
+            "change_percent": quote.get("percent_change"),
+            "volume": quote.get("volume"),
+            "turnover": _calculate_turnover(quote.get("volume"), quote.get("close")) if quote else None,
+            "fifty_two_week": quote.get("fifty_two_week", {}) if quote else {},
+            "last_updated": datetime.now().isoformat()
+        }
+
+    async def _save_to_db_and_redis(self, symbol: str, data: dict, country: str):
+        """حفظ في DB + Redis"""
+        await self._save_to_db(symbol, data)
+        await self._save_to_redis(symbol, data, country)
+
+    async def _save_to_db(self, symbol: str, data: dict):
+        """💾 حفظ في PostgreSQL"""
+        try:
+            db = await self._get_db_session()
+            
+            # حفظ/تحديث Profile
+            profile_dict = {
+                "symbol": symbol,
+                "name": data.get("name"),
+                "exchange": data.get("exchange", "Tadawul"),
+                "sector": data.get("sector"),
+                "industry": data.get("industry"),
+                "employees": data.get("employees"),
+                "website": data.get("website"),
+                "country": data.get("country", "Saudi Arabia"),
+                "state": data.get("state"),
+            }
+            db.merge(CompanyProfile(**profile_dict))
+            
+            # حفظ/تحديث Quote
+            fifty_two_week = data.get("fifty_two_week", {})
+            quote_dict = {
+                "symbol": symbol,
+                "currency": data.get("currency", "SAR"),
+                "close": data.get("price"),
+                "change": data.get("change"),
+                "percent_change": data.get("change_percent"),
+                "previous_close": data.get("previous_close"),
+                "volume": data.get("volume"),
+                "open": data.get("open"),
+                "high": data.get("high"),
+                "low": data.get("low"),
+                "average_volume": data.get("average_volume"),
+                "is_market_open": data.get("is_market_open"),
+                **{f"fifty_two_week_{k}": v for k, v in fifty_two_week.items()},
+                "last_updated": datetime.now()
+            }
+            db.merge(StockQuote(**quote_dict))
+            
+            db.commit()
+            print(f"✅ Saved {symbol} to DB")
+        except Exception as e:
+            print(f"❌ DB Save Error: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+    async def _save_to_redis(self, symbol: str, data: dict, country: str):
+        """حفظ في Redis"""
+        cache_key = f"tadawul:stock:{symbol}:{country}"
+        await redis_cache.set(cache_key, data, expire=self.cache_expire)
+
+    async def get_all_saudi_stocks(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
+        """جلب كل الأسهم السعودية"""
+        symbols = list(SAUDI_STOCKS)
         
+        # cache key للكل
+        all_key = f"tadawul:all:{country}"
+        
+        # جرب Redis أولاً
+        cached = await redis_cache.get(all_key)
+        if cached:
+            return cached
+        
+        # جلب كل سهم
+        stocks = []
         for symbol in symbols:
-            clean_sym = clean_symbol(symbol)
-            
-            # مسح من Redis
-            cache_key = self._get_symbol_cache_key(clean_sym, "Saudi Arabia")
-            await redis_cache.delete(cache_key)
-            
-            # مسح من قاعدة البيانات إذا طلب
-            if clear_db:
-                db = None
-                try:
-                    db = await self._get_db_connection()
-                    if db:
-                        from app.models.profile import CompanyProfile
-                        from app.models.quote import StockQuote
-                        
-                        # حذف البيانات
-                        db.query(CompanyProfile).filter(CompanyProfile.symbol == clean_sym).delete()
-                        db.query(StockQuote).filter(StockQuote.symbol == clean_sym).delete()
-                        db.commit()
-                        
-                        print(f"🗑️ تم حذف بيانات {clean_sym} من PostgreSQL")
-                except Exception as e:
-                    print(f"⚠️ خطأ في حذف {clean_sym} من PostgreSQL: {e}")
-                    if db:
-                        db.rollback()
-                finally:
-                    if db:
-                        db.close()
-            
-            cleared_count += 1
-            print(f"🧹 تم مسح كاش {clean_sym}")
+            stock = await self.get_stock_data(symbol, country)
+            if stock:
+                stocks.append(stock)
         
-        return cleared_count
-    
-    async def get_bulk_stocks_data(self, symbols: List[str], country: str = "Saudi Arabia") -> Dict[str, Any]:
-        """جلب بيانات مجموعة من الرموز مرة واحدة"""
-        cache_key = self._get_bulk_cache_key(symbols, country)
-        
-        # 1. ✅ البحث في Redis أولاً
-        cached_data = await redis_cache.get(cache_key)
-        if cached_data and isinstance(cached_data, dict):
-            print(f"✅ تم جلب بيانات {len(symbols)} سهم من Redis")
-            return cached_data
-        
-        # 2. 🌐 جلب من API
-        print(f"🌐 جلب بيانات {len(symbols)} سهم من API...")
-        
-        all_stocks = []
-        BATCH_SIZE = 50 # حجم الدفعة
-        
-        for i in range(0, len(symbols), BATCH_SIZE):
-            batch_symbols = symbols[i:i + BATCH_SIZE]
-            
-            # إنشاء tasks لكل سهم في الدفعة
-            tasks = []
-            for symbol in batch_symbols:
-                tasks.append(self.get_stock_by_symbol(symbol, country))
-            
-            # تنفيذ الدفعة
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for j, result in enumerate(results):
-                symbol = batch_symbols[j]
-                if isinstance(result, Exception):
-                    print(f"⚠️ خطأ في معالجة السهم {symbol}: {result}")
-                    continue
-                if result:
-                    all_stocks.append(result)
-                else:
-                    print(f"⚠️ لا توجد بيانات للرمز {symbol}")
-            
-            # delay بين الدفعات
-            if i + BATCH_SIZE < len(symbols):
-                await asyncio.sleep(2)
-            
-            print(f"📊 تقدم: {min(i + BATCH_SIZE, len(symbols))}/{len(symbols)}")
-        
-        result_data = {
-            "data": all_stocks,
-            "total": len(all_stocks),
-            "symbols_requested": len(symbols),
-            "symbols_found": len(all_stocks),
-            "country": country,
-            "timestamp": datetime.now().isoformat()
+        result = {
+            "data": stocks,
+            "total": len(stocks),
+            "timestamp": datetime.now().isoformat(),
+            "country": country
         }
         
-        # حفظ في Redis
-        await redis_cache.set(cache_key, result_data, expire=self.cache_expire)
-        print(f"💾 تم تخزين بيانات {len(all_stocks)} سهم في Redis")
-        
-        return result_data
-    
-    async def get_all_saudi_stocks(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
-        """جلب كل الأسهم السعودية المحددة في SAUDI_STOCKS"""
-        symbols_list = list(SAUDI_STOCKS)
-        return await self.get_bulk_stocks_data(symbols_list, country)
+        # خزّن في Redis
+        await redis_cache.set(all_key, result, expire=self.cache_expire)
+        return result
 
-    async def get_stock_by_symbol(self, symbol: str, country: str = "Saudi Arabia") -> Optional[Dict[str, Any]]:
-        """جلب بيانات سهم معين"""
-        clean_sym = clean_symbol(symbol)
-        cache_key = self._get_symbol_cache_key(clean_sym, country)
-        
-        # 1. ✅ البحث في Redis أولاً
-        cached_stock = await redis_cache.get(cache_key)
-        if cached_stock and isinstance(cached_stock, dict):
-            print(f"✅ تم جلب بيانات {clean_sym} من Redis")
-            return cached_stock
-        
-        # 2. 🔍 البحث في PostgreSQL
-        print(f"🔍 البحث في PostgreSQL للرمز {clean_sym}...")
-        db = None
-        try:
-            db = await self._get_db_connection()
-            if db:
-                from app.models.profile import CompanyProfile
-                from app.models.quote import StockQuote
-                
-                db_profile = db.query(CompanyProfile).filter(CompanyProfile.symbol == clean_sym).first()
-                db_quote = db.query(StockQuote).filter(StockQuote.symbol == clean_sym).first()
-                
-                if db_profile and db_quote:
-                    print(f"✅ تم جلب بيانات {clean_sym} من PostgreSQL")
-                    
-                    profile_dict = {c.name: getattr(db_profile, c.name) for c in db_profile.__table__.columns}
-                    quote_dict = {c.name: getattr(db_quote, c.name) for c in db_quote.__table__.columns}
-                    
-                    stock_data = await self._combine_stock_data(profile_dict, quote_dict)
-                    
-                    await redis_cache.set(cache_key, stock_data, expire=self.db_cache_expire)
-                    return stock_data
-                    
-        except Exception as e:
-            print(f"⚠️ فشل جلب البيانات من PostgreSQL: {e}")
-        finally:
-            if db:
-                db.close()
-        
-        # 3. 🌐 جلب من API
-        print(f"🌐 جلب بيانات {clean_sym} من API...")
-        try:
-            profile_task = get_company_profile(clean_sym, country)
-            quote_task = get_stock_quote(clean_sym, country)
-            
-            api_profile, api_quote = await asyncio.gather(profile_task, quote_task)
-            
-            if not api_profile and not api_quote:
-                print(f"❌ لا توجد بيانات للرمز {clean_sym} في API")
-                return None
-            
-# في جزء دمج البيانات من API، غير إلى:
-            stock_data = {
-                "symbol": clean_sym,
-                "name": api_profile.get("name", "N/A") if api_profile else "N/A",
-                "exchange": "Tadawul",
-                "sector": api_profile.get("sector") if api_profile else "N/A",
-                "industry": api_profile.get("industry") if api_profile else "N/A",
-                "employees": api_profile.get("employees") if api_profile else "N/A",
-                "website": api_profile.get("website") if api_profile else "N/A",
-                "country": api_profile.get("country", country) if api_profile else country,
-                "state": api_profile.get("state") if api_profile else "N/A",
-                "currency": api_quote.get("currency", "SAR") if api_quote else "SAR",
-                "price": api_quote.get("close") if api_quote else "N/A",
-                "change": api_quote.get("change") if api_quote else "N/A",
-                "change_percent": api_quote.get("percent_change") if api_quote else "N/A",
-                "previous_close": api_quote.get("previous_close") if api_quote else "N/A",
-                "volume": api_quote.get("volume") if api_quote else "N/A",
-                "turnover": _calculate_turnover(api_quote.get("volume"), api_quote.get("close")) if api_quote else "N/A",
-                "open": api_quote.get("open") if api_quote else "N/A",
-                "high": api_quote.get("high") if api_quote else "N/A",
-                "low": api_quote.get("low") if api_quote else "N/A",
-                "average_volume": api_quote.get("average_volume") if api_quote else "N/A",
-                "is_market_open": api_quote.get("is_market_open", False) if api_quote else False,
-                
-                # ⭐⭐ التصحيح: حفظ بيانات 52 أسبوع كاملة من API
-                "fifty_two_week": api_quote.get("fifty_two_week", {}) if api_quote else {},
-                "fifty_two_week_range": api_quote.get("fifty_two_week", {}).get("range", "N/A") if api_quote else "N/A",
-                "fifty_two_week_low": api_quote.get("fifty_two_week", {}).get("low", "N/A") if api_quote else "N/A",
-                "fifty_two_week_high": api_quote.get("fifty_two_week", {}).get("high", "N/A") if api_quote else "N/A",
-                "fifty_two_week_low_change": api_quote.get("fifty_two_week", {}).get("low_change", "N/A") if api_quote else "N/A",
-                "fifty_two_week_high_change": api_quote.get("fifty_two_week", {}).get("high_change", "N/A") if api_quote else "N/A",
-                "fifty_two_week_low_change_percent": api_quote.get("fifty_two_week", {}).get("low_change_percent", "N/A") if api_quote else "N/A",
-                "fifty_two_week_high_change_percent": api_quote.get("fifty_two_week", {}).get("high_change_percent", "N/A") if api_quote else "N/A",
-                
-                "last_updated": datetime.now().isoformat()
-            }
-            
-            # حفظ في PostgreSQL
-            try:
-                if api_profile or api_quote:
-                    await self._save_to_postgresql(clean_sym, api_profile, api_quote)
-                    print(f"💾 تم حفظ بيانات {clean_sym} في PostgreSQL")
-            except Exception as e:
-                print(f"⚠️ فشل حفظ البيانات في PostgreSQL: {e}")
-            
-            # حفظ في Redis
-            await redis_cache.set(cache_key, stock_data, expire=self.cache_expire)
-            print(f"💾 تم تخزين بيانات {clean_sym} في Redis")
-            
-            return stock_data
-            
-        except Exception as e:
-            print(f"❌ خطأ في جلب البيانات من API: {e}")
-            return None
-
-    async def get_all_stocks(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
-        """جلب كل الأسهم - Cache Hierarchy: Redis → PostgreSQL → API"""
-        cache_key = self._get_all_cache_key(country)
-        
-        # 1. ✅ البحث في Redis أولاً (الأسرع)
-        cached_data = await redis_cache.get(cache_key)
-        if cached_data and isinstance(cached_data, dict):
-            print(f"✅ تم جلب كل أسهم Tadawul من Redis")
-            return cached_data
-        
-        # 2. 🔍 البحث في PostgreSQL (المخزن الدائم)
-        print(f"🔍 جلب كل الأسهم من PostgreSQL...")
-        db = None
-        try:
-            db = await self._get_db_connection()
-            if db:
-                from app.models.profile import CompanyProfile
-                from app.models.quote import StockQuote
-                
-                db_profiles = db.query(CompanyProfile).all()
-                db_quotes = db.query(StockQuote).all()
-                
-                if db_profiles and len(db_profiles) > 0:
-                    print(f"✅ تم جلب {len(db_profiles)} شركة من PostgreSQL")
-                    
-                    # إنشاء lookup dictionaries
-                    quotes_dict = {quote.symbol: quote for quote in db_quotes}
-                    
-                    all_stocks = []
-                    for profile in db_profiles:
-                        quote = quotes_dict.get(profile.symbol)
-                        if quote:
-                            profile_dict = {c.name: getattr(profile, c.name) for c in profile.__table__.columns}
-                            quote_dict = {c.name: getattr(quote, c.name) for c in quote.__table__.columns}
-                            stock_data = await self._combine_stock_data(profile_dict, quote_dict)
-                            all_stocks.append(stock_data)
-                    
-                    result_data = {
-                        "data": all_stocks,
-                        "total": len(all_stocks),
-                        "timestamp": datetime.now().isoformat(),
-                        "country": country
-                    }
-                    
-                    # حفظ في Redis للمرة القادمة
-                    await redis_cache.set(cache_key, result_data, expire=self.db_cache_expire)
-                    return result_data
-                    
-        except Exception as e:
-            print(f"⚠️ فشل جلب البيانات من PostgreSQL: {e}")
-        finally:
-            if db:
-                db.close()
-        
-        # 3. 🌐 جلب من API (المصدر الخارجي)
-        print(f"🌐 جلب كل أسهم Tadawul من API...")
-        api_data = await self._get_all_stocks_from_api(country)
-        
-        if api_data and api_data.get("data"):
-            # حفظ في Redis للمرة القادمة
-            await redis_cache.set(cache_key, api_data, expire=self.all_cache_expire)
-            print(f"💾 تم تخزين كل أسهم Tadawul في Redis")
-        
-        return api_data if api_data else {"data": [], "total": 0}
-    
-    async def _get_all_stocks_from_api(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
-        """جلب كل الأسهم السعودية من API"""
-        try:
-            # استخدام القائمة الكاملة للرموز السعودية
-            saudi_symbols = list(SAUDI_STOCKS)
-            
-            print(f"🔍 جلب بيانات {len(saudi_symbols)} سهم سعودي من API...")
-            
-            all_stocks = []
-            BATCH_SIZE = 2  # تخفيض الحجم علشان ما نتعداش rate limit
-            
-            for i in range(0, len(saudi_symbols), BATCH_SIZE):
-                batch_symbols = saudi_symbols[i:i + BATCH_SIZE]
-                
-                tasks = [self.get_stock_by_symbol(symbol, country) for symbol in batch_symbols]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                
-                for result in results:
-                    if isinstance(result, Exception):
-                        print(f"⚠️ خطأ في معالجة السهم: {result}")
-                        continue
-                    if result:
-                        all_stocks.append(result)
-                
-                # delay بين الـ batches
-                if i + BATCH_SIZE < len(saudi_symbols):
-                    await asyncio.sleep(3)  # زيادة الـ delay
-                    
-                print(f"📊 تقدم: {min(i + BATCH_SIZE, len(saudi_symbols))}/{len(saudi_symbols)}")
-            
-            print(f"✅ تم جلب بيانات {len(all_stocks)} سهم من أصل {len(saudi_symbols)}")
-            
-            return {
-                "data": all_stocks,
-                "total": len(all_stocks),
-                "timestamp": datetime.now().isoformat(),
-                "country": country
-            }
-            
-        except Exception as e:
-            print(f"❌ خطأ في جلب كل الأسهم من API: {str(e)}")
-            return {"data": [], "total": 0}
-
-    async def clear_all_cache(self):
-        """مسح كل كاش الأسهم"""
-        try:
-            # مسح كل المفاتيح المتعلقة بالأسهم من Redis
-            keys = await redis_cache.redis_client.keys(f"{self.cache_prefix}:*")
-            if keys:
-                await redis_cache.redis_client.delete(*keys)
-            print("🧹 تم مسح كل كاش الأسهم من Redis")
-            return True
-        except Exception as e:
-            print(f"❌ خطأ في مسح كاش الأسهم: {e}")
-            return False
-        
-
-# إنشاء نسخة عامة
+# إنشاء instance
 stock_cache = StockCache()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# # app/services/cache/stock_cache.py
+
+# import asyncio
+# from typing import Dict, List, Optional, Any
+# from datetime import datetime
+# from sqlalchemy.orm import Session
+
+# from app.core.redis import redis_cache
+# from app.core.database import get_db
+# from app.models.profile import CompanyProfile
+# from app.models.quote import StockQuote
+# from app.services.twelve_data.profile_service import get_company_profile
+# from app.services.twelve_data.quote_service import get_stock_quote, _calculate_turnover
+
+# # قائمة الرموز السعودية
+# SAUDI_STOCKS = {
+#     "6014", "6015", "6016", "6017", "6018", "6020", "6040", "6013"
+
+#     # أضف باقي الرموز هنا...
+# }
+
+# def clean_symbol(symbol: str) -> str:
+#     return ''.join(filter(str.isdigit, symbol)).upper()
+
+# class StockCache:
+#     def __init__(self):
+#         self.cache_expire = 100  # 5 دقائق   300
+#         self.db_cache_expire = 3600  # 1 ساعة
+        
+
+#     async def _get_db_session(self) -> Session:
+#         """الحصول على جلسة DB"""
+#         return next(get_db())
+
+#     async def get_stock_data(self, symbol: str, country: str = "Saudi Arabia") -> Optional[Dict[str, Any]]:
+#         """
+#         🎯 الدالة الرئيسية - الترتيب: DB → Redis → API
+#         """
+#         clean_sym = clean_symbol(symbol)
+        
+#         # 1. جرب DB أولاً
+#         stock_data = await self._fetch_from_db(clean_sym)
+#         if stock_data:
+#             await self._save_to_redis(clean_sym, stock_data, country)
+#             return stock_data
+        
+#         # 2. جرب Redis ثانياً
+#         stock_data = await self._fetch_from_redis(clean_sym, country)
+#         if stock_data:
+#             return stock_data
+        
+#         # 3. API كملاحة أخيرة
+#         stock_data = await self._fetch_from_api(clean_sym, country)
+#         if stock_data:
+#             await self._save_to_db_and_redis(clean_sym, stock_data, country)
+        
+#         return stock_data
+
+#     async def _fetch_from_db(self, symbol: str) -> Optional[Dict[str, Any]]:
+#         """🔍 جلب من PostgreSQL"""
+#         try:
+#             db = await self._get_db_session()
+            
+#             profile = db.query(CompanyProfile).filter_by(symbol=symbol).first()
+#             quote = db.query(StockQuote).filter_by(symbol=symbol).first()
+            
+#             if profile and quote:
+#                 return self._merge_profile_quote(profile, quote)
+            
+#             return None
+#         except Exception as e:
+#             print(f"⚠️ DB Error: {e}")
+#             return None
+#         finally:
+#             db.close()
+
+#     async def _fetch_from_redis(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+#         """🔍 جلب من Redis"""
+#         try:
+#             cache_key = f"tadawul:stock:{symbol}:{country}"
+#             return await redis_cache.get(cache_key)
+#         except:
+#             return None
+
+#     async def _fetch_from_api(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+#         """🌐 جلب من Twelve Data API"""
+#         try:
+#             profile, quote = await asyncio.gather(
+#                 get_company_profile(symbol, country),
+#                 get_stock_quote(symbol, country),
+#                 return_exceptions=True
+#             )
+            
+#             if isinstance(profile, Exception) or isinstance(quote, Exception):
+#                 return None
+            
+#             return self._build_stock_data(symbol, profile, quote)
+#         except:
+#             return None
+
+#     # ... الإضافات في نفس الملف ...
+
+#     def _merge_profile_quote(self, profile: CompanyProfile, quote: StockQuote) -> Dict[str, Any]:
+#         """دمج بيانات DB إلى شكل موحد مع RS Ratings"""
+#         return {
+#             "symbol": profile.symbol,
+#             "name": profile.name or profile.symbol,
+#             "exchange": profile.exchange or "Tadawul",
+#             "sector": profile.sector,
+#             "industry": profile.industry,
+#             "employees": profile.employees,
+#             "website": profile.website,
+#             "country": profile.country or "Saudi Arabia",
+#             "state": profile.state,
+            
+#             "currency": quote.currency or "SAR",
+#             "price": quote.close,
+#             "change": quote.change,
+#             "change_percent": quote.percent_change,
+#             "previous_close": quote.previous_close,
+#             "volume": quote.volume,
+#             "turnover": _calculate_turnover(quote.volume, quote.close),
+#             "open": quote.open,
+#             "high": quote.high,
+#             "low": quote.low,
+#             "average_volume": quote.average_volume,
+#             "is_market_open": quote.is_market_open,
+            
+#             "fifty_two_week": {
+#                 "low": quote.fifty_two_week_low,
+#                 "high": quote.fifty_two_week_high,
+#                 "low_change": quote.fifty_two_week_low_change,
+#                 "high_change": quote.fifty_two_week_high_change,
+#                 "low_change_percent": quote.fifty_two_week_low_change_percent,
+#                 "high_change_percent": quote.fifty_two_week_high_change_percent,
+#                 "range": quote.fifty_two_week_range
+#             },
+#             "fifty_two_week_low": quote.fifty_two_week_low,
+#             "fifty_two_week_high": quote.fifty_two_week_high,
+            
+#             # 🎯 RS Ratings
+#             "rs_12m": quote.rs_12m,
+#             "rs_9m": quote.rs_9m,
+#             "rs_6m": quote.rs_6m,
+#             "rs_3m": quote.rs_3m,
+#             "rs_1m": quote.rs_1m,
+#             "rs_2w": quote.rs_2w,
+#             "rs_1w": quote.rs_1w,
+            
+#             "last_updated": datetime.now().isoformat()
+#         }
+
+#     def _build_stock_data(self, symbol: str, profile: dict, quote: dict) -> Dict[str, Any]:
+#         """بناء البيانات من API response"""
+#         return {
+#             "symbol": symbol,
+#             "name": profile.get("name", symbol) if profile else symbol,
+#             "exchange": "Tadawul",
+#             "sector": profile.get("sector"),
+#             "industry": profile.get("industry"),
+#             "currency": quote.get("currency", "SAR") if quote else "SAR",
+#             "price": quote.get("close"),
+#             "change": quote.get("change"),
+#             "change_percent": quote.get("percent_change"),
+#             "volume": quote.get("volume"),
+#             "turnover": _calculate_turnover(quote.get("volume"), quote.get("close")) if quote else None,
+#             "fifty_two_week": quote.get("fifty_two_week", {}) if quote else {},
+#             "last_updated": datetime.now().isoformat()
+#         }
+
+#     async def _save_to_db_and_redis(self, symbol: str, data: dict, country: str):
+#         """حفظ في DB + Redis"""
+#         await self._save_to_db(symbol, data)
+#         await self._save_to_redis(symbol, data, country)
+
+#     async def _save_to_db(self, symbol: str, data: dict):
+#         """💾 حفظ في PostgreSQL"""
+#         try:
+#             db = await self._get_db_session()
+            
+#             # حفظ/تحديث Profile
+#             profile_dict = {
+#                 "symbol": symbol,
+#                 "name": data.get("name"),
+#                 "exchange": data.get("exchange", "Tadawul"),
+#                 "sector": data.get("sector"),
+#                 "industry": data.get("industry"),
+#                 "employees": data.get("employees"),
+#                 "website": data.get("website"),
+#                 "country": data.get("country", "Saudi Arabia"),
+#                 "state": data.get("state"),
+#             }
+#             db.merge(CompanyProfile(**profile_dict))
+            
+#             # حفظ/تحديث Quote
+#             fifty_two_week = data.get("fifty_two_week", {})
+#             quote_dict = {
+#                 "symbol": symbol,
+#                 "currency": data.get("currency", "SAR"),
+#                 "close": data.get("price"),
+#                 "change": data.get("change"),
+#                 "percent_change": data.get("change_percent"),
+#                 "previous_close": data.get("previous_close"),
+#                 "volume": data.get("volume"),
+#                 "open": data.get("open"),
+#                 "high": data.get("high"),
+#                 "low": data.get("low"),
+#                 "average_volume": data.get("average_volume"),
+#                 "is_market_open": data.get("is_market_open"),
+#                 **{f"fifty_two_week_{k}": v for k, v in fifty_two_week.items()},
+#                 "last_updated": datetime.now()
+#             }
+#             db.merge(StockQuote(**quote_dict))
+            
+#             db.commit()
+#             print(f"✅ Saved {symbol} to DB")
+#         except Exception as e:
+#             print(f"❌ DB Save Error: {e}")
+#             db.rollback()
+#         finally:
+#             db.close()
+
+#     async def _save_to_redis(self, symbol: str, data: dict, country: str):
+#         """حفظ في Redis"""
+#         cache_key = f"tadawul:stock:{symbol}:{country}"
+#         await redis_cache.set(cache_key, data, expire=self.cache_expire)
+
+#     async def get_all_saudi_stocks(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
+#         """جلب كل الأسهم السعودية"""
+#         symbols = list(SAUDI_STOCKS)
+        
+#         # cache key للكل
+#         all_key = f"tadawul:all:{country}"
+        
+#         # جرب Redis أولاً
+#         cached = await redis_cache.get(all_key)
+#         if cached:
+#             return cached
+        
+#         # جلب كل سهم
+#         stocks = []
+#         for symbol in symbols:
+#             stock = await self.get_stock_data(symbol, country)
+#             if stock:
+#                 stocks.append(stock)
+        
+#         result = {
+#             "data": stocks,
+#             "total": len(stocks),
+#             "timestamp": datetime.now().isoformat(),
+#             "country": country
+#         }
+        
+#         # خزّن في Redis
+#         await redis_cache.set(all_key, result, expire=self.cache_expire)
+#         return result
+
+# # إنشاء instance
+# stock_cache = StockCache()
+
+
+
+
+# import asyncio
+# from typing import Dict, List, Optional, Any
+# from datetime import datetime
+# from sqlalchemy.orm import Session
+
+# from app.core.redis import redis_cache
+# from app.core.database import get_db
+# from app.models.profile import CompanyProfile
+# from app.models.quote import StockQuote
+# from app.services.twelve_data.profile_service import get_company_profile
+# from app.services.twelve_data.quote_service import get_stock_quote, _calculate_turnover
+
+# # قائمة الرموز السعودية
+# SAUDI_STOCKS = {
+#     "1010", "1020", "1030", "1050", "1060", "1080", "1111", "1120", "1140", "7211",
+#     # ... (أضف الباقي)
+# }
+
+# def clean_symbol(symbol: str) -> str:
+#     return ''.join(filter(str.isdigit, symbol)).upper()
+
+# class StockCache:
+#     def __init__(self):
+#         self.cache_expire = 300  # 5 دقائق
+#         self.db_cache_expire = 3600  # 1 ساعة
+
+#     # محذوف: جميع دوال _get_cache_key المكررة (مش محتاجينها لوحدها)
+
+#     async def _get_db_session(self) -> Session:
+#         """الحصول على جلسة DB"""
+#         return next(get_db())
+
+#     async def get_stock_data(self, symbol: str, country: str = "Saudi Arabia") -> Optional[Dict[str, Any]]:
+#         """🎯 DB → Redis → API"""
+#         clean_sym = clean_symbol(symbol)
+        
+#         # 1. جرب DB أولاً (المصدر الموثوق)
+#         stock_data = await self._fetch_from_db(clean_sym)
+#         if stock_data:
+#             # حدّث Redis بالبيانات الجديدة
+#             await self._save_to_redis(clean_sym, stock_data, country)
+#             return stock_data
+        
+#         # 2. جرب Redis (الكاش)
+#         stock_data = await self._fetch_from_redis(clean_sym, country)
+#         if stock_data:
+#             return stock_data
+        
+#         # 3. API كملاحة أخيرة
+#         stock_data = await self._fetch_from_api(clean_sym, country)
+#         if stock_data:
+#             # احفظ في DB + Redis
+#             await self._save_to_db_and_redis(clean_sym, stock_data, country)
+        
+#         return stock_data
+
+#     async def _fetch_from_db(self, symbol: str) -> Optional[Dict[str, Any]]:
+#         """🔍 جلب من PostgreSQL ودمج Profile + Quote"""
+#         try:
+#             db = await self._get_db_session()
+            
+#             # جلب البيانات من الجدولين
+#             profile = db.query(CompanyProfile).filter_by(symbol=symbol).first()
+#             quote = db.query(StockQuote).filter_by(symbol=symbol).first()
+            
+#             if profile and quote:
+#                 # دمج البيانات
+#                 return {
+#                     "symbol": profile.symbol,
+#                     "name": profile.name or symbol,  # ⭐ الاسم من DB
+#                     "exchange": profile.exchange or "Tadawul",
+#                     "sector": profile.sector,
+#                     "industry": profile.industry,
+#                     "employees": profile.employees,
+#                     "website": profile.website,
+#                     "country": profile.country or "Saudi Arabia",
+#                     "state": profile.state,
+                    
+#                     # البيانات المالية من Quote
+#                     "currency": quote.currency or "SAR",
+#                     "price": quote.close,
+#                     "change": quote.change,
+#                     "change_percent": quote.percent_change,
+#                     "previous_close": quote.previous_close,
+#                     "volume": quote.volume,
+#                     "turnover": _calculate_turnover(quote.volume, quote.close),
+#                     "open": quote.open,
+#                     "high": quote.high,
+#                     "low": quote.low,
+#                     "average_volume": quote.average_volume,
+#                     "is_market_open": quote.is_market_open,
+                    
+#                     # 52-week data
+#                     "fifty_two_week": {
+#                         "low": quote.fifty_two_week_low,
+#                         "high": quote.fifty_two_week_high,
+#                         "low_change": quote.fifty_two_week_low_change,
+#                         "high_change": quote.fifty_two_week_high_change,
+#                         "low_change_percent": quote.fifty_two_week_low_change_percent,
+#                         "high_change_percent": quote.fifty_two_week_high_change_percent,
+#                         "range": quote.fifty_two_week_range
+#                     },
+#                     "fifty_two_week_low": quote.fifty_two_week_low,
+#                     "fifty_two_week_high": quote.fifty_two_week_high,
+                    
+#                     "last_updated": quote.last_updated.isoformat() if quote.last_updated else datetime.now().isoformat()
+#                 }
+            
+#             return None
+#         except Exception as e:
+#             print(f"⚠️ DB Fetch Error: {e}")
+#             return None
+#         finally:
+#             db.close()
+
+#     async def _fetch_from_redis(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+#         """جلب من Redis"""
+#         try:
+#             cache_key = f"tadawul:stock:{symbol}:{country}"
+#             return await redis_cache.get(cache_key)
+#         except:
+#             return None
+
+#     async def _fetch_from_api(self, symbol: str, country: str) -> Optional[Dict[str, Any]]:
+#         """جلب من Twelve Data API"""
+#         try:
+#             profile, quote = await asyncio.gather(
+#                 get_company_profile(symbol, country),
+#                 get_stock_quote(symbol, country),
+#                 return_exceptions=True
+#             )
+            
+#             if isinstance(profile, Exception) or isinstance(quote, Exception):
+#                 return None
+            
+#             return self._build_stock_data(symbol, profile, quote)
+#         except:
+#             return None
+
+#     def _merge_profile_quote(self, profile: CompanyProfile, quote: StockQuote) -> Dict[str, Any]:
+#         """دمج بيانات DB إلى شكل موحد"""
+#         return {
+#             "symbol": profile.symbol,
+#             "name": profile.name,
+#             "exchange": profile.exchange or "Tadawul",
+#             "sector": profile.sector,
+#             "industry": profile.industry,
+#             "employees": profile.employees,
+#             "website": profile.website,
+#             "country": profile.country or "Saudi Arabia",
+#             "state": profile.state,
+#             "currency": quote.currency or "SAR",
+#             "price": quote.close,
+#             "change": quote.change,
+#             "change_percent": quote.percent_change,
+#             "previous_close": quote.previous_close,
+#             "volume": quote.volume,
+#             "turnover": _calculate_turnover(quote.volume, quote.close),
+#             "open": quote.open,
+#             "high": quote.high,
+#             "low": quote.low,
+#             "average_volume": quote.average_volume,
+#             "is_market_open": quote.is_market_open,
+#             "fifty_two_week": {
+#                 "low": quote.fifty_two_week_low,
+#                 "high": quote.fifty_two_week_high,
+#                 "low_change": quote.fifty_two_week_low_change,
+#                 "high_change": quote.fifty_two_week_high_change,
+#                 "low_change_percent": quote.fifty_two_week_low_change_percent,
+#                 "high_change_percent": quote.fifty_two_week_high_change_percent,
+#                 "range": quote.fifty_two_week_range
+#             },
+#             "fifty_two_week_low": quote.fifty_two_week_low,
+#             "fifty_two_week_high": quote.fifty_two_week_high,
+#             "last_updated": datetime.now().isoformat()
+#         }
+
+#     def _build_stock_data(self, symbol: str, profile: dict, quote: dict) -> Dict[str, Any]:
+#         """بناء البيانات من API response"""
+#         return {
+#             "symbol": symbol,
+#             "name": profile.get("name", "N/A") if profile else "N/A",
+#             "exchange": "Tadawul",
+#             "sector": profile.get("sector") if profile else "N/A",
+#             "industry": profile.get("industry") if profile else "N/A",
+#             "currency": quote.get("currency", "SAR") if quote else "SAR",
+#             "price": quote.get("close") if quote else "N/A",
+#             "change": quote.get("change") if quote else "N/A",
+#             "change_percent": quote.get("percent_change") if quote else "N/A",
+#             "volume": quote.get("volume") if quote else "N/A",
+#             "turnover": _calculate_turnover(quote.get("volume"), quote.get("close")) if quote else "N/A",
+#             "fifty_two_week": quote.get("fifty_two_week", {}) if quote else {},
+#             "last_updated": datetime.now().isoformat()
+#         }
+
+#     async def _save_to_db_and_redis(self, symbol: str, data: dict, country: str):
+#         """حفظ في DB + Redis"""
+#         await self._save_to_db(symbol, data)
+#         await self._save_to_redis(symbol, data, country)
+
+#     async def _save_to_db(self, symbol: str, data: dict):
+#         """💾 حفظ في DB مع البيانات الكاملة"""
+#         try:
+#             db = await self._get_db_session()
+            
+#             # 1. حفظ/تحديث Profile
+#             profile_dict = {
+#                 "symbol": symbol,
+#                 "name": data.get("name"),
+#                 "exchange": data.get("exchange", "Tadawul"),
+#                 "sector": data.get("sector"),
+#                 "industry": data.get("industry"),
+#                 "employees": data.get("employees"),
+#                 "website": data.get("website"),
+#                 "country": data.get("country", "Saudi Arabia"),
+#                 "state": data.get("state"),
+#             }
+            
+#             # استخدم merge للتحديث أو الإنشاء
+#             db.merge(CompanyProfile(**profile_dict))
+            
+#             # 2. حفظ/تحديث Quote
+#             fifty_two_week = data.get("fifty_two_week", {})
+#             quote_dict = {
+#                 "symbol": symbol,
+#                 "currency": data.get("currency", "SAR"),
+#                 "close": data.get("price"),
+#                 "change": data.get("change"),
+#                 "percent_change": data.get("change_percent"),
+#                 "previous_close": data.get("previous_close"),
+#                 "volume": data.get("volume"),
+#                 "open": data.get("open"),
+#                 "high": data.get("high"),
+#                 "low": data.get("low"),
+#                 "average_volume": data.get("average_volume"),
+#                 "is_market_open": data.get("is_market_open"),
+#                 # 52-week fields
+#                 "fifty_two_week_low": fifty_two_week.get("low"),
+#                 "fifty_two_week_high": fifty_two_week.get("high"),
+#                 "fifty_two_week_low_change": fifty_two_week.get("low_change"),
+#                 "fifty_two_week_high_change": fifty_two_week.get("high_change"),
+#                 "fifty_two_week_low_change_percent": fifty_two_week.get("low_change_percent"),
+#                 "fifty_two_week_high_change_percent": fifty_two_week.get("high_change_percent"),
+#                 "fifty_two_week_range": fifty_two_week.get("range"),
+#                 "last_updated": datetime.now()
+#             }
+            
+#             db.merge(StockQuote(**quote_dict))
+#             db.commit()
+#             print(f"✅ Saved {symbol} to DB")
+#         except Exception as e:
+#             print(f"❌ DB Save Error: {e}")
+#             db.rollback()
+#         finally:
+#             db.close()
+
+#     async def _save_to_redis(self, symbol: str, data: dict, country: str):
+#         """حفظ في Redis"""
+#         cache_key = f"tadawul:stock:{symbol}:{country}"
+#         await redis_cache.set(cache_key, data, expire=self.cache_expire)
+
+#     async def get_all_saudi_stocks(self, country: str = "Saudi Arabia") -> Dict[str, Any]:
+#         """جلب كل الأسهم السعودية"""
+#         symbols = list(SAUDI_STOCKS)
+        
+#         # جلب من Redis
+#         all_key = f"tadawul:all:{country}"
+#         cached = await redis_cache.get(all_key)
+#         if cached:
+#             return cached
+        
+#         # جلب من API
+#         stocks = []
+#         for symbol in symbols:
+#             stock = await self.get_stock_data(symbol, country)
+#             if stock:
+#                 stocks.append(stock)
+        
+#         result = {
+#             "data": stocks,
+#             "total": len(stocks),
+#             "timestamp": datetime.now().isoformat(),
+#             "country": country
+#         }
+        
+#         await redis_cache.set(all_key, result, expire=self.cache_expire)
+#         return result
+
+# # إنشاء instance واحد
+# stock_cache = StockCache()

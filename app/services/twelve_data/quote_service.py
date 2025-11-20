@@ -1,7 +1,8 @@
+# app/services/twelve_data/quote_service.py
+
 import httpx
 from typing import Dict, List, Any, Optional
 from app.core.config import API_KEY
-from app.schemas.quote import StockQuoteCreate, FiftyTwoWeek
 from datetime import datetime
 
 def clean_symbol(symbol: str) -> str:
@@ -30,30 +31,18 @@ async def get_stock_quote(symbol: str, country: str = "Saudi Arabia") -> Optiona
         if "code" in data or data.get("close") is None:
             return None
         
-        # ⭐⭐ معالجة البيانات لتتوافق مع الـ Schema
-        processed_data = await _process_quote_data(data, clean_sym)
-        return processed_data
+        return await _process_quote_data(data, clean_sym)
         
     except Exception as e:
         print(f"❌ خطأ في جلب بيانات السعر للسهم {symbol}: {str(e)}")
         return None
 
 async def _process_quote_data(raw_data: Dict[str, Any], symbol: str) -> Dict[str, Any]:
-    """معالجة البيانات الخام لتتوافق مع الـ Schema"""
+    """معالجة البيانات الخام"""
     
-    # استخراج بيانات 52 أسبوع
-    fifty_two_week = {
-        "low": raw_data.get("fifty_two_week", {}).get("low"),
-        "high": raw_data.get("fifty_two_week", {}).get("high"),
-        "low_change": raw_data.get("fifty_two_week", {}).get("low_change"),
-        "high_change": raw_data.get("fifty_two_week", {}).get("high_change"),
-        "low_change_percent": raw_data.get("fifty_two_week", {}).get("low_change_percent"),
-        "high_change_percent": raw_data.get("fifty_two_week", {}).get("high_change_percent"),
-        "range": raw_data.get("fifty_two_week", {}).get("range")
-    }
+    fifty_two_week = raw_data.get("fifty_two_week", {})
     
-    # بناء البيانات المعالجة
-    processed_data = {
+    return {
         "symbol": symbol,
         "name": raw_data.get("name"),
         "exchange": raw_data.get("exchange", "Tadawul"),
@@ -73,7 +62,6 @@ async def _process_quote_data(raw_data: Dict[str, Any], symbol: str) -> Dict[str
         "average_volume": str(raw_data.get("average_volume")) if raw_data.get("average_volume") else None,
         "is_market_open": raw_data.get("is_market_open", False),
         
-        # ⭐⭐ بيانات 52 أسبوع المعالجة
         "fifty_two_week": fifty_two_week,
         "fifty_two_week_low": str(fifty_two_week.get("low")) if fifty_two_week.get("low") else None,
         "fifty_two_week_high": str(fifty_two_week.get("high")) if fifty_two_week.get("high") else None,
@@ -83,29 +71,14 @@ async def _process_quote_data(raw_data: Dict[str, Any], symbol: str) -> Dict[str
         "fifty_two_week_high_change_percent": str(fifty_two_week.get("high_change_percent")) if fifty_two_week.get("high_change_percent") else None,
         "fifty_two_week_range": fifty_two_week.get("range"),
         
-        # ⭐⭐ الحقول الإضافية المطلوبة في Schema
-        "extended_price": None,
-        "extended_change": None,
-        "extended_percent_change": None,
-        "extended_timestamp": None,
-        
         "last_updated": datetime.now().isoformat()
     }
-    
-    # طباعة بيانات التصحيح
-    print(f"✅ البيانات المعالجة للرمز {symbol}:")
-    print(f"   - 52-week range: {processed_data.get('fifty_two_week_range')}")
-    print(f"   - 52-week low: {processed_data.get('fifty_two_week_low')}")
-    print(f"   - 52-week high: {processed_data.get('fifty_two_week_high')}")
-    print(f"   - Full 52-week object: {processed_data.get('fifty_two_week')}")
-    
-    return processed_data
 
-async def get_multiple_quotes(symbols: List[str], country: str = "Saudi Arabia") -> List[Dict[str, Any]]:  # ⭐ تم التعديل
+async def get_multiple_quotes(symbols: List[str], country: str = "Saudi Arabia") -> List[Dict[str, Any]]:
     """جلب بيانات السعر لعدة رموز"""
     import asyncio
     
-    tasks = [get_stock_quote(symbol, country) for symbol in symbols]  # ⭐ تم التعديل
+    tasks = [get_stock_quote(symbol, country) for symbol in symbols]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     quotes = []
@@ -116,38 +89,10 @@ async def get_multiple_quotes(symbols: List[str], country: str = "Saudi Arabia")
     
     return quotes
 
-def convert_quote_to_schema(quote_data: Dict[str, Any]) -> StockQuoteCreate:
-    """تحويل بيانات API إلى schema"""
-    fifty_two_week = quote_data.get("fifty_two_week", {})
-    
-    return StockQuoteCreate(
-        symbol=quote_data.get("symbol", ""),
-        currency=quote_data.get("currency", "SAR"),
-        datetime=quote_data.get("datetime"),
-        timestamp=quote_data.get("timestamp"),
-        open=float(quote_data.get("open", 0)) if quote_data.get("open") and quote_data.get("open") != "N/A" else None,
-        high=float(quote_data.get("high", 0)) if quote_data.get("high") and quote_data.get("high") != "N/A" else None,
-        low=float(quote_data.get("low", 0)) if quote_data.get("low") and quote_data.get("low") != "N/A" else None,
-        close=float(quote_data.get("close", 0)) if quote_data.get("close") and quote_data.get("close") != "N/A" else None,
-        volume=int(quote_data.get("volume", 0)) if quote_data.get("volume") and quote_data.get("volume") != "N/A" else None,
-        previous_close=float(quote_data.get("previous_close", 0)) if quote_data.get("previous_close") and quote_data.get("previous_close") != "N/A" else None,
-        change=float(quote_data.get("change", 0)) if quote_data.get("change") and quote_data.get("change") != "N/A" else None,
-        percent_change=float(quote_data.get("percent_change", 0)) if quote_data.get("percent_change") and quote_data.get("percent_change") != "N/A" else None,
-        average_volume=int(quote_data.get("average_volume", 0)) if quote_data.get("average_volume") and quote_data.get("average_volume") != "N/A" else None,
-        is_market_open=quote_data.get("is_market_open", False),
-        fifty_two_week=FiftyTwoWeek(
-            low=float(fifty_two_week.get("low", 0)) if fifty_two_week.get("low") and fifty_two_week.get("low") != "N/A" else None,
-            high=float(fifty_two_week.get("high", 0)) if fifty_two_week.get("high") and fifty_two_week.get("high") != "N/A" else None,
-            low_change=float(fifty_two_week.get("low_change", 0)) if fifty_two_week.get("low_change") and fifty_two_week.get("low_change") != "N/A" else None,
-            high_change=float(fifty_two_week.get("high_change", 0)) if fifty_two_week.get("high_change") and fifty_two_week.get("high_change") != "N/A" else None,
-            low_change_percent=float(fifty_two_week.get("low_change_percent", 0)) if fifty_two_week.get("low_change_percent") and fifty_two_week.get("low_change_percent") != "N/A" else None,
-            high_change_percent=float(fifty_two_week.get("high_change_percent", 0)) if fifty_two_week.get("high_change_percent") and fifty_two_week.get("high_change_percent") != "N/A" else None,
-            range=fifty_two_week.get("range")
-        )
-    )
+# ⭐⭐⭐ حذف الدالة convert_quote_to_schema لأنها مش مستخدمة
 
 def _calculate_turnover(volume: str, close_price: str) -> str:
-    """حساب قيمة التداول (Turnover)"""
+    """حساب قيمة التداول"""
     try:
         if volume and close_price and volume != "N/A" and close_price != "N/A":
             volume_num = float(str(volume).replace(',', ''))

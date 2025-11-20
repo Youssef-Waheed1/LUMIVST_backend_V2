@@ -1,7 +1,12 @@
+# app/core/redis.py
+
 import redis.asyncio as redis
 import os
 import json
 from typing import Any, Optional, List
+
+# ✅ استخدام REDIS_URL من config
+from app.core.config import REDIS_URL
 
 class RedisCache:
     def __init__(self):
@@ -11,12 +16,9 @@ class RedisCache:
     async def init_redis(self):
         """تهيئة اتصال Redis"""
         try:
-            # قراءة رابط الاتصال من متغير البيئة
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:7424")
-
-            # إنشاء الاتصال من URL
+            # ⭐ استخدام REDIS_URL مباشرة
             self.redis_client = redis.from_url(
-                redis_url,
+                REDIS_URL,
                 decode_responses=True,
                 socket_connect_timeout=5,
                 retry_on_timeout=True

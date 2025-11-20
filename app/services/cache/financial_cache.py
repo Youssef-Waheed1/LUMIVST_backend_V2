@@ -5,11 +5,30 @@ from app.core.redis import redis_cache
 from app.core.database import get_db
 from app.services.database.financial_repository import FinancialRepository
 
+SYMBOL_NAME_CORRECTIONS = {
+  "4145": "OBEIKAN GLASS",
+  "4146": "Gas Arabian Services Co",
+  "7211": "AZM"
+}
+
 class FinancialCache:
     def __init__(self):
         self.cache_prefix = "financials"
         self.cache_expire = 86400  # 24 ساعة
         self.db_cache_expire = 86400 * 7  # أسبوع للبيانات في DB
+        self.symbol_corrections = SYMBOL_NAME_CORRECTIONS  # ⬅️ هذا السطر كان ناقصاً
+
+    async def _correct_symbol_name(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """تصحيح اسم الشركة إذا كان الرمز في القائمة"""
+        if symbol in self.symbol_corrections:
+            if 'meta' in data and 'name' in data['meta']:
+                data['meta']['name'] = self.symbol_corrections[symbol]
+            elif 'meta' in data:
+                data['meta']['name'] = self.symbol_corrections[symbol]
+            else:
+                data['meta'] = {'name': self.symbol_corrections[symbol]}
+        
+        return data
     
     def _get_income_key(self, cache_key: str, period: str, limit: int) -> str:
         """مفتاح كاش لقائمة الدخل مع البلد"""
@@ -131,77 +150,86 @@ class FinancialCache:
         return FinancialRepository(db)
     
     async def get_income_statement(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
-            """جلب قائمة الدخل - Cache Hierarchy: Redis → PostgreSQL → API - زي stock_cache بالضبط"""
-            redis_key = self._get_income_key(cache_key, period, limit)
-            symbol = self._extract_symbol_from_cache_key(cache_key)
-            country = self._extract_country_from_cache_key(cache_key)
+        """جلب قائمة الدخل - Cache Hierarchy: Redis → PostgreSQL → API - زي stock_cache بالضبط"""
+        redis_key = self._get_income_key(cache_key, period, limit)
+        symbol = self._extract_symbol_from_cache_key(cache_key)
+        country = self._extract_country_from_cache_key(cache_key)
+        
+        # 1. ✅ البحث في Redis أولاً (الأسرع)
+        cached_data = await redis_cache.get(redis_key)
+        if cached_data is not None:
+            print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من الكاش")
+            # تطبيق تصحيح الأسماء
+            cached_data = await self._correct_symbol_name(symbol, cached_data)
+            return cached_data
+        
+        # 2. 🔍 البحث في PostgreSQL (المخزن الدائم)
+        print(f"🔍 البحث عن قائمة الدخل لـ {cache_key} في قاعدة البيانات...")
+        db = None
+        try:
+            db = await self._get_db_connection()
+            if db:
+                repo = FinancialRepository(db)
+                db_records = await repo.get_income_statement(symbol, country, period, limit)
+                
+                if db_records:
+                    print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من قاعدة البيانات")
+                    db_data = self._convert_db_income_to_api_format(db_records)
+                    # تطبيق تصحيح الأسماء
+                    db_data = await self._correct_symbol_name(symbol, db_data)
+                    
+                    # تخزين في الكاش للمرة القادمة
+                    await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
+                    return db_data
+                    
+        except Exception as e:
+            print(f"⚠️ فشل جلب البيانات من PostgreSQL: {e}")
+        finally:
+            if db:
+                db.close()
+        
+        # 3. 🌐 جلب من API (المصدر الخارجي)
+        print(f"🌐 قائمة الدخل لـ {cache_key} غير موجودة محلياً، جلب من API...")
+        try:
+            api_data = await self._fetch_income_from_api(cache_key, period=period, limit=limit)
             
-            # 1. ✅ البحث في Redis أولاً (الأسرع)
-            cached_data = await redis_cache.get(redis_key)
-            if cached_data is not None:
-                print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من الكاش")
-                if isinstance(cached_data, dict):
-                    return cached_data
-                return cached_data
-            
-            # 2. 🔍 البحث في PostgreSQL (المخزن الدائم)
-            print(f"🔍 البحث عن قائمة الدخل لـ {cache_key} في قاعدة البيانات...")
-            db = None
-            try:
+            if api_data and api_data.get('income_statement'):
+                print(f"💾 حفظ قائمة الدخل لـ {cache_key} في قاعدة البيانات...")
+                
+                # حفظ في PostgreSQL
                 db = await self._get_db_connection()
                 if db:
-                    repo = FinancialRepository(db)
-                    db_records = await repo.get_income_statement(symbol, country, period, limit)
-                    
-                    if db_records:
-                        print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من قاعدة البيانات")
-                        db_data = self._convert_db_income_to_api_format(db_records)
-                        
-                        # تخزين في الكاش للمرة القادمة
-                        await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
-                        return db_data
-                        
-            except Exception as e:
-                print(f"⚠️ فشل جلب البيانات من PostgreSQL: {e}")
-            finally:
-                if db:
-                    db.close()
+                    try:
+                        repo = FinancialRepository(db)
+                        await repo.save_bulk_income_statements(symbol, country, api_data['income_statement'])
+                        print(f"💾 تم حفظ قائمة الدخل لـ {cache_key} في PostgreSQL")
+                    except Exception as e:
+                        print(f"⚠️ فشل حفظ البيانات في PostgreSQL: {e}")
+                    finally:
+                        if db:
+                            db.close()
+                
+                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
+                api_data = await self._correct_symbol_name(symbol, api_data)
+                
+                # تخزين في Redis
+                await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
+                print(f"💾 تم تخزين قائمة الدخل لـ {cache_key} في الكاش وقاعدة البيانات")
+            else:
+                print(f"⚠️ لا توجد بيانات قائمة دخل لـ {cache_key} من API")
+                api_data = {"income_statement": [], "meta": {"symbol": symbol}}
+                # تطبيق تصحيح الأسماء حتى لو كانت البيانات فارغة
+                api_data = await self._correct_symbol_name(symbol, api_data)
             
-            # 3. 🌐 جلب من API (المصدر الخارجي)
-            print(f"🌐 قائمة الدخل لـ {cache_key} غير موجودة محلياً، جلب من API...")
-            try:
-                api_data = await self._fetch_income_from_api(cache_key, period=period, limit=limit)
+            return api_data
                 
-                if api_data and api_data.get('income_statement'):
-                    print(f"💾 حفظ قائمة الدخل لـ {cache_key} في قاعدة البيانات...")
-                    
-                    # حفظ في PostgreSQL
-                    db = await self._get_db_connection()
-                    if db:
-                        try:
-                            repo = FinancialRepository(db)
-                            await repo.save_bulk_income_statements(symbol, country, api_data['income_statement'])
-                            print(f"💾 تم حفظ قائمة الدخل لـ {cache_key} في PostgreSQL")
-                        except Exception as e:
-                            print(f"⚠️ فشل حفظ البيانات في PostgreSQL: {e}")
-                        finally:
-                            if db:
-                                db.close()
-                    
-                    # تخزين في Redis
-                    await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
-                    print(f"💾 تم تخزين قائمة الدخل لـ {cache_key} في الكاش وقاعدة البيانات")
-                else:
-                    print(f"⚠️ لا توجد بيانات قائمة دخل لـ {cache_key} من API")
-                    api_data = {"income_statement": [], "meta": {"symbol": symbol}}
-                
-                return api_data
-                
-            except Exception as e:
-                print(f"❌ خطأ في جلب البيانات من API: {e}")
-                return {"income_statement": [], "meta": {"symbol": symbol}}
-        
-        # ⭐⭐ نفس النظام بالضبط للميزانية العمومية والتدفقات النقدية
+        except Exception as e:
+            print(f"❌ خطأ في جلب البيانات من API: {e}")
+            error_data = {"income_statement": [], "meta": {"symbol": symbol}}
+            # تطبيق تصحيح الأسماء حتى في حالة الخطأ
+            error_data = await self._correct_symbol_name(symbol, error_data)
+            return error_data
+    
     async def get_balance_sheet(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
         """جلب الميزانية العمومية - Cache Hierarchy: Redis → PostgreSQL → API"""
         redis_key = self._get_balance_key(cache_key, period, limit)
@@ -212,8 +240,8 @@ class FinancialCache:
         cached_data = await redis_cache.get(redis_key)
         if cached_data is not None:
             print(f"✅ تم جلب الميزانية العمومية لـ {cache_key} من الكاش")
-            if isinstance(cached_data, dict):
-                return cached_data
+            # تطبيق تصحيح الأسماء
+            cached_data = await self._correct_symbol_name(symbol, cached_data)
             return cached_data
         
         # 2. 🔍 البحث في PostgreSQL
@@ -228,6 +256,8 @@ class FinancialCache:
                 if db_records:
                     print(f"✅ تم جلب الميزانية العمومية لـ {cache_key} من قاعدة البيانات")
                     db_data = self._convert_db_balance_to_api_format(db_records)
+                    # تطبيق تصحيح الأسماء
+                    db_data = await self._correct_symbol_name(symbol, db_data)
                     
                     await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
                     return db_data
@@ -258,18 +288,26 @@ class FinancialCache:
                         if db:
                             db.close()
                 
+                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
+                api_data = await self._correct_symbol_name(symbol, api_data)
+                
                 await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
                 print(f"💾 تم تخزين الميزانية العمومية لـ {cache_key} في الكاش وقاعدة البيانات")
             else:
                 print(f"⚠️ لا توجد بيانات ميزانية عمومية لـ {cache_key} من API")
                 api_data = {"balance_sheet": [], "meta": {"symbol": symbol}}
+                # تطبيق تصحيح الأسماء
+                api_data = await self._correct_symbol_name(symbol, api_data)
             
             return api_data
             
         except Exception as e:
             print(f"❌ خطأ في جلب البيانات من API: {e}")
-            return {"balance_sheet": [], "meta": {"symbol": symbol}}
-        
+            error_data = {"balance_sheet": [], "meta": {"symbol": symbol}}
+            # تطبيق تصحيح الأسماء
+            error_data = await self._correct_symbol_name(symbol, error_data)
+            return error_data
+    
     async def get_cash_flow(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
         """جلب التدفقات النقدية - Cache Hierarchy: Redis → PostgreSQL → API"""
         redis_key = self._get_cash_flow_key(cache_key, period, limit)
@@ -280,8 +318,8 @@ class FinancialCache:
         cached_data = await redis_cache.get(redis_key)
         if cached_data is not None:
             print(f"✅ تم جلب التدفقات النقدية لـ {cache_key} من الكاش")
-            if isinstance(cached_data, dict):
-                return cached_data
+            # تطبيق تصحيح الأسماء
+            cached_data = await self._correct_symbol_name(symbol, cached_data)
             return cached_data
         
         # 2. 🔍 البحث في PostgreSQL
@@ -296,6 +334,8 @@ class FinancialCache:
                 if db_records:
                     print(f"✅ تم جلب التدفقات النقدية لـ {cache_key} من قاعدة البيانات")
                     db_data = self._convert_db_cash_flow_to_api_format(db_records)
+                    # تطبيق تصحيح الأسماء
+                    db_data = await self._correct_symbol_name(symbol, db_data)
                     
                     await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
                     return db_data
@@ -326,17 +366,25 @@ class FinancialCache:
                         if db:
                             db.close()
                 
+                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
+                api_data = await self._correct_symbol_name(symbol, api_data)
+                
                 await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
                 print(f"💾 تم تخزين التدفقات النقدية لـ {cache_key} في الكاش وقاعدة البيانات")
             else:
                 print(f"⚠️ لا توجد بيانات تدفقات نقدية لـ {cache_key} من API")
                 api_data = {"cash_flow": [], "meta": {"symbol": symbol}}
+                # تطبيق تصحيح الأسماء
+                api_data = await self._correct_symbol_name(symbol, api_data)
             
             return api_data
             
         except Exception as e:
             print(f"❌ خطأ في جلب البيانات من API: {e}")
-            return {"cash_flow": [], "meta": {"symbol": symbol}}
+            error_data = {"cash_flow": [], "meta": {"symbol": symbol}}
+            # تطبيق تصحيح الأسماء
+            error_data = await self._correct_symbol_name(symbol, error_data)
+            return error_data
 
     async def clear_financial_cache(self, symbol: str = None, country: str = "Saudi Arabia"):
         """مسح كاش البيانات المالية لرمز واحد أو رموز متعددة مع البلد"""

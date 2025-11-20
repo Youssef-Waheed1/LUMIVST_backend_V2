@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.core.redis import redis_cache
+
 from app.core.database import get_db
 from app.services.cache.stock_cache import stock_cache 
 

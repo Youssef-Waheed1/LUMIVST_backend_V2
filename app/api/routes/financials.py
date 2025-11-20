@@ -1,18 +1,13 @@
-from fastapi import APIRouter, HTTPException, Query
-from app.services.cache.financial_cache import financial_cache
-import json
-
-router = APIRouter(prefix="/financials", tags=["Financials"])
-
-
 from fastapi import APIRouter, HTTPException, Query, Depends
 from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.models.financials import IncomeStatement, BalanceSheet, CashFlow
 from datetime import datetime
 import json
+from app.core.database import get_db
+from app.models.financials import IncomeStatement, BalanceSheet, CashFlow
+from app.services.cache.financial_cache import financial_cache
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
+
 
 #  إضافة route جديد لجلب البيانات من قاعدة البيانات المحلية
 @router.get("/{symbol}")
@@ -181,114 +176,114 @@ async def cash_flow(
         print(f"❌ خطأ في التدفقات النقدية لـ {symbol}: {e}")
         return {"cash_flow": []}
 
-@router.post("/load/{symbol}")
-async def load_financial_data(
-    symbol: str,
-    country: str = Query("Saudi Arabia", description="البلد"),
-    period: str = Query("annual", regex="^(annual|quarterly)$"),
-    limit: int = Query(6, ge=1, le=20)
-):
-    """جلب وتخزين البيانات المالية لرمز معين"""
-    try:
-        print(f"🔄 بدء تحميل البيانات المالية لـ {symbol} - البلد: {country}")
+# @router.post("/load/{symbol}")
+# async def load_financial_data(
+#     symbol: str,
+#     country: str = Query("Saudi Arabia", description="البلد"),
+#     period: str = Query("annual", regex="^(annual|quarterly)$"),
+#     limit: int = Query(6, ge=1, le=20)
+# ):
+#     """جلب وتخزين البيانات المالية لرمز معين"""
+#     try:
+#         print(f"🔄 بدء تحميل البيانات المالية لـ {symbol} - البلد: {country}")
         
-        cache_key = f"{country}:{symbol}"
+#         cache_key = f"{country}:{symbol}"
         
-        # جلب البيانات المالية (سيتم تخزينها تلقائياً في الكاش وقاعدة البيانات)
-        income_data = await financial_cache.get_income_statement(cache_key, period, limit)
-        balance_data = await financial_cache.get_balance_sheet(cache_key, period, limit)
-        cashflow_data = await financial_cache.get_cash_flow(cache_key, period, limit)
+#         # جلب البيانات المالية (سيتم تخزينها تلقائياً في الكاش وقاعدة البيانات)
+#         income_data = await financial_cache.get_income_statement(cache_key, period, limit)
+#         balance_data = await financial_cache.get_balance_sheet(cache_key, period, limit)
+#         cashflow_data = await financial_cache.get_cash_flow(cache_key, period, limit)
         
-        # التحقق من وجود البيانات
-        has_income = bool(income_data.get('income_statement'))
-        has_balance = bool(balance_data.get('balance_sheet'))
-        has_cashflow = bool(cashflow_data.get('cash_flow'))
+#         # التحقق من وجود البيانات
+#         has_income = bool(income_data.get('income_statement'))
+#         has_balance = bool(balance_data.get('balance_sheet'))
+#         has_cashflow = bool(cashflow_data.get('cash_flow'))
         
-        return {
-            "message": f"✅ تم تحميل البيانات المالية لـ {symbol} في {country}",
-            "symbol": symbol,
-            "country": country,
-            "period": period,
-            "data_available": {
-                "income_statement": has_income,
-                "balance_sheet": has_balance,
-                "cash_flow": has_cashflow
-            },
-            "records_count": {
-                "income": len(income_data.get('income_statement', [])),
-                "balance": len(balance_data.get('balance_sheet', [])),
-                "cash_flow": len(cashflow_data.get('cash_flow', []))
-            }
-        }
+#         return {
+#             "message": f"✅ تم تحميل البيانات المالية لـ {symbol} في {country}",
+#             "symbol": symbol,
+#             "country": country,
+#             "period": period,
+#             "data_available": {
+#                 "income_statement": has_income,
+#                 "balance_sheet": has_balance,
+#                 "cash_flow": has_cashflow
+#             },
+#             "records_count": {
+#                 "income": len(income_data.get('income_statement', [])),
+#                 "balance": len(balance_data.get('balance_sheet', [])),
+#                 "cash_flow": len(cashflow_data.get('cash_flow', []))
+#             }
+#         }
         
-    except Exception as e:
-        print(f"❌ خطأ في تحميل البيانات المالية لـ {symbol}: {e}")
-        raise HTTPException(status_code=500, detail=f"خطأ في تحميل البيانات المالية: {str(e)}")
+#     except Exception as e:
+#         print(f"❌ خطأ في تحميل البيانات المالية لـ {symbol}: {e}")
+#         raise HTTPException(status_code=500, detail=f"خطأ في تحميل البيانات المالية: {str(e)}")
 
-@router.post("/load/bulk")
-async def load_bulk_financial_data(
-    symbols: str = Query(..., description="رموز الأسهم مفصولة بفواصل"),
-    country: str = Query("Saudi Arabia", description="البلد"),
-    period: str = Query("annual", regex="^(annual|quarterly)$"),
-    limit: int = Query(6, ge=1, le=20)
-):
-    """جلب وتخزين البيانات المالية لرموز متعددة"""
-    try:
-        symbol_list = [s.strip() for s in symbols.split(',')]
-        results = []
+# @router.post("/load/bulk")
+# async def load_bulk_financial_data(
+#     symbols: str = Query(..., description="رموز الأسهم مفصولة بفواصل"),
+#     country: str = Query("Saudi Arabia", description="البلد"),
+#     period: str = Query("annual", regex="^(annual|quarterly)$"),
+#     limit: int = Query(6, ge=1, le=20)
+# ):
+#     """جلب وتخزين البيانات المالية لرموز متعددة"""
+#     try:
+#         symbol_list = [s.strip() for s in symbols.split(',')]
+#         results = []
         
-        print(f"🔄 بدء تحميل البيانات المالية لـ {len(symbol_list)} رمز في {country}...")
+#         print(f"🔄 بدء تحميل البيانات المالية لـ {len(symbol_list)} رمز في {country}...")
         
-        for symbol in symbol_list:
-            try:
-                cache_key = f"{country}:{symbol}"
+#         for symbol in symbol_list:
+#             try:
+#                 cache_key = f"{country}:{symbol}"
                 
-                # جلب البيانات المالية
-                income_data = await financial_cache.get_income_statement(cache_key, period, limit)
-                balance_data = await financial_cache.get_balance_sheet(cache_key, period, limit)
-                cashflow_data = await financial_cache.get_cash_flow(cache_key, period, limit)
+#                 # جلب البيانات المالية
+#                 income_data = await financial_cache.get_income_statement(cache_key, period, limit)
+#                 balance_data = await financial_cache.get_balance_sheet(cache_key, period, limit)
+#                 cashflow_data = await financial_cache.get_cash_flow(cache_key, period, limit)
                 
-                # التحقق من وجود البيانات
-                has_income = bool(income_data.get('income_statement'))
-                has_balance = bool(balance_data.get('balance_sheet'))
-                has_cashflow = bool(cashflow_data.get('cash_flow'))
+#                 # التحقق من وجود البيانات
+#                 has_income = bool(income_data.get('income_statement'))
+#                 has_balance = bool(balance_data.get('balance_sheet'))
+#                 has_cashflow = bool(cashflow_data.get('cash_flow'))
                 
-                results.append({
-                    "symbol": symbol,
-                    "country": country,
-                    "success": True,
-                    "data_available": {
-                        "income_statement": has_income,
-                        "balance_sheet": has_balance,
-                        "cash_flow": has_cashflow
-                    },
-                    "records_count": {
-                        "income": len(income_data.get('income_statement', [])),
-                        "balance": len(balance_data.get('balance_sheet', [])),
-                        "cash_flow": len(cashflow_data.get('cash_flow', []))
-                    }
-                })
+#                 results.append({
+#                     "symbol": symbol,
+#                     "country": country,
+#                     "success": True,
+#                     "data_available": {
+#                         "income_statement": has_income,
+#                         "balance_sheet": has_balance,
+#                         "cash_flow": has_cashflow
+#                     },
+#                     "records_count": {
+#                         "income": len(income_data.get('income_statement', [])),
+#                         "balance": len(balance_data.get('balance_sheet', [])),
+#                         "cash_flow": len(cashflow_data.get('cash_flow', []))
+#                     }
+#                 })
                 
-                print(f"✅ تم تحميل البيانات المالية لـ {symbol} في {country}")
+#                 print(f"✅ تم تحميل البيانات المالية لـ {symbol} في {country}")
                 
-            except Exception as e:
-                print(f"❌ خطأ في تحميل البيانات المالية لـ {symbol}: {e}")
-                results.append({
-                    "symbol": symbol,
-                    "country": country,
-                    "success": False,
-                    "error": str(e)
-                })
+#             except Exception as e:
+#                 print(f"❌ خطأ في تحميل البيانات المالية لـ {symbol}: {e}")
+#                 results.append({
+#                     "symbol": symbol,
+#                     "country": country,
+#                     "success": False,
+#                     "error": str(e)
+#                 })
         
-        success_count = sum(1 for r in results if r['success'])
+#         success_count = sum(1 for r in results if r['success'])
         
-        return {
-            "message": f"✅ تم تحميل البيانات المالية لـ {success_count} من أصل {len(symbol_list)} رمز في {country}",
-            "country": country,
-            "period": period,
-            "results": results
-        }
+#         return {
+#             "message": f"✅ تم تحميل البيانات المالية لـ {success_count} من أصل {len(symbol_list)} رمز في {country}",
+#             "country": country,
+#             "period": period,
+#             "results": results
+#         }
         
-    except Exception as e:
-        print(f"❌ خطأ في تحميل البيانات المالية الجماعي: {e}")
-        raise HTTPException(status_code=500, detail=f"خطأ في تحميل البيانات المالية الجماعي: {str(e)}")
+#     except Exception as e:
+#         print(f"❌ خطأ في تحميل البيانات المالية الجماعي: {e}")
+#         raise HTTPException(status_code=500, detail=f"خطأ في تحميل البيانات المالية الجماعي: {str(e)}")
