@@ -1,9 +1,9 @@
-# app/services/twelve_data/quote_service.py
 
 import httpx
 from typing import Dict, List, Any, Optional
-from app.core.config import API_KEY
+from app.core.config import settings
 from datetime import datetime
+from app.utils.saudi_time import utc_timestamp_to_saudi, get_saudi_metadata
 
 def clean_symbol(symbol: str) -> str:
     """تنظيف رمز الشركة"""
@@ -12,7 +12,7 @@ def clean_symbol(symbol: str) -> str:
     return ''.join(filter(str.isdigit, symbol)).upper()
 
 async def get_stock_quote(symbol: str, country: str = "Saudi Arabia") -> Optional[Dict[str, Any]]:
-    """جلب بيانات السعر والتغيرات للسهم"""
+    """جلب بيانات السعر والتغيرات للسهم مع تحويل التوقيت للسعودية"""
     try:
         clean_sym = clean_symbol(symbol)
         
@@ -38,41 +38,58 @@ async def get_stock_quote(symbol: str, country: str = "Saudi Arabia") -> Optiona
         return None
 
 async def _process_quote_data(raw_data: Dict[str, Any], symbol: str) -> Dict[str, Any]:
-    """معالجة البيانات الخام"""
+    """معالجة البيانات الخام مع تحويل التوقيت للسعودية"""
     
     fifty_two_week = raw_data.get("fifty_two_week", {})
+    
+    # تحويل timestamp من الـ API للتوقيت السعودي
+    api_timestamp = raw_data.get("timestamp")
+    saudi_time = utc_timestamp_to_saudi(api_timestamp) if api_timestamp else {"datetime": None, "timestamp": None}
+    
+    # الحصول على metadata السعودي
+    metadata = get_saudi_metadata()
     
     return {
         "symbol": symbol,
         "name": raw_data.get("name"),
-        "exchange": raw_data.get("exchange", "Tadawul"),
-        "mic_code": raw_data.get("mic_code"),
-        "currency": raw_data.get("currency", "SAR"),
-        "datetime": raw_data.get("datetime"),
-        "timestamp": raw_data.get("timestamp"),
-        "last_quote_at": raw_data.get("last_quote_at"),
-        "open": str(raw_data.get("open")) if raw_data.get("open") else None,
-        "high": str(raw_data.get("high")) if raw_data.get("high") else None,
-        "low": str(raw_data.get("low")) if raw_data.get("low") else None,
-        "close": str(raw_data.get("close")) if raw_data.get("close") else None,
-        "volume": str(raw_data.get("volume")) if raw_data.get("volume") else None,
-        "previous_close": str(raw_data.get("previous_close")) if raw_data.get("previous_close") else None,
-        "change": str(raw_data.get("change")) if raw_data.get("change") else None,
-        "percent_change": str(raw_data.get("percent_change")) if raw_data.get("percent_change") else None,
-        "average_volume": str(raw_data.get("average_volume")) if raw_data.get("average_volume") else None,
+        "exchange": metadata["exchange"],
+        "mic_code": metadata["mic_code"],
+        "currency": metadata["currency"],
+        
+        # ⭐ التوقيت السعودي بدلاً من UTC
+        "datetime": saudi_time["datetime"],
+        "timestamp": saudi_time["timestamp"],
+        "timezone": metadata["timezone"],
+        
+        "open": _safe_str(raw_data.get("open")),
+        "high": _safe_str(raw_data.get("high")),
+        "low": _safe_str(raw_data.get("low")),
+        "close": _safe_str(raw_data.get("close")),
+        "volume": _safe_str(raw_data.get("volume")),
+        "previous_close": _safe_str(raw_data.get("previous_close")),
+        "change": _safe_str(raw_data.get("change")),
+        "percent_change": _safe_str(raw_data.get("percent_change")),
+        "average_volume": _safe_str(raw_data.get("average_volume")),
         "is_market_open": raw_data.get("is_market_open", False),
         
+        # بيانات 52 أسبوع
         "fifty_two_week": fifty_two_week,
-        "fifty_two_week_low": str(fifty_two_week.get("low")) if fifty_two_week.get("low") else None,
-        "fifty_two_week_high": str(fifty_two_week.get("high")) if fifty_two_week.get("high") else None,
-        "fifty_two_week_low_change": str(fifty_two_week.get("low_change")) if fifty_two_week.get("low_change") else None,
-        "fifty_two_week_high_change": str(fifty_two_week.get("high_change")) if fifty_two_week.get("high_change") else None,
-        "fifty_two_week_low_change_percent": str(fifty_two_week.get("low_change_percent")) if fifty_two_week.get("low_change_percent") else None,
-        "fifty_two_week_high_change_percent": str(fifty_two_week.get("high_change_percent")) if fifty_two_week.get("high_change_percent") else None,
+        "fifty_two_week_low": _safe_str(fifty_two_week.get("low")),
+        "fifty_two_week_high": _safe_str(fifty_two_week.get("high")),
+        "fifty_two_week_low_change": _safe_str(fifty_two_week.get("low_change")),
+        "fifty_two_week_high_change": _safe_str(fifty_two_week.get("high_change")),
+        "fifty_two_week_low_change_percent": _safe_str(fifty_two_week.get("low_change_percent")),
+        "fifty_two_week_high_change_percent": _safe_str(fifty_two_week.get("high_change_percent")),
         "fifty_two_week_range": fifty_two_week.get("range"),
         
-        "last_updated": datetime.now().isoformat()
+        "last_updated": metadata["datetime"]
     }
+
+def _safe_str(value: any) -> Optional[str]:
+    """تحويل آمن للقيمة إلى string"""
+    if value is None or value == "":
+        return None
+    return str(value)
 
 async def get_multiple_quotes(symbols: List[str], country: str = "Saudi Arabia") -> List[Dict[str, Any]]:
     """جلب بيانات السعر لعدة رموز"""
@@ -88,8 +105,6 @@ async def get_multiple_quotes(symbols: List[str], country: str = "Saudi Arabia")
         quotes.append(result)
     
     return quotes
-
-# ⭐⭐⭐ حذف الدالة convert_quote_to_schema لأنها مش مستخدمة
 
 def _calculate_turnover(volume: str, close_price: str) -> str:
     """حساب قيمة التداول"""

@@ -5,31 +5,12 @@ from app.core.redis import redis_cache
 from app.core.database import get_db
 from app.services.database.financial_repository import FinancialRepository
 
-SYMBOL_NAME_CORRECTIONS = {
-  "4145": "OBEIKAN GLASS",
-  "4146": "Gas Arabian Services Co",
-  "7211": "AZM"
-}
-
 class FinancialCache:
     def __init__(self):
         self.cache_prefix = "financials"
         self.cache_expire = 86400  # 24 ساعة
         self.db_cache_expire = 86400 * 7  # أسبوع للبيانات في DB
-        self.symbol_corrections = SYMBOL_NAME_CORRECTIONS  # ⬅️ هذا السطر كان ناقصاً
 
-    async def _correct_symbol_name(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """تصحيح اسم الشركة إذا كان الرمز في القائمة"""
-        if symbol in self.symbol_corrections:
-            if 'meta' in data and 'name' in data['meta']:
-                data['meta']['name'] = self.symbol_corrections[symbol]
-            elif 'meta' in data:
-                data['meta']['name'] = self.symbol_corrections[symbol]
-            else:
-                data['meta'] = {'name': self.symbol_corrections[symbol]}
-        
-        return data
-    
     def _get_income_key(self, cache_key: str, period: str, limit: int) -> str:
         """مفتاح كاش لقائمة الدخل مع البلد"""
         return f"{self.cache_prefix}:income:{cache_key}:{period}:{limit}"
@@ -51,7 +32,7 @@ class FinancialCache:
         return cache_key.split(':')[0] if ':' in cache_key else "Saudi Arabia"
     
     async def _get_db_connection(self):
-        """الحصول على اتصال قاعدة بيانات بشكل آمن - زي stock_cache"""
+        """الحصول على اتصال قاعدة بيانات بشكل آمن"""
         try:
             return next(get_db())
         except Exception as e:
@@ -59,7 +40,7 @@ class FinancialCache:
             return None
     
     async def _fetch_income_from_api(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
-        """استيراد دالة API بشكل ديناميكي مع البلد - زي stock_cache"""
+        """استيراد دالة API بشكل ديناميكي مع البلد"""
         from app.services.twelve_data.fundamentals import get_income_statement
         
         symbol = self._extract_symbol_from_cache_key(cache_key)
@@ -69,7 +50,7 @@ class FinancialCache:
         return await get_income_statement(symbol, country=country, period=period, limit=limit)
     
     async def _fetch_balance_from_api(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
-        """استيراد دالة API بشكل ديناميكي مع البلد - زي stock_cache"""
+        """استيراد دالة API بشكل ديناميكي مع البلد"""
         from app.services.twelve_data.fundamentals import get_balance_sheet
         
         symbol = self._extract_symbol_from_cache_key(cache_key)
@@ -79,7 +60,7 @@ class FinancialCache:
         return await get_balance_sheet(symbol, country=country, period=period, limit=limit)
     
     async def _fetch_cash_flow_from_api(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
-        """استيراد دالة API بشكل ديناميكي مع البلد - زي stock_cache"""
+        """استيراد دالة API بشكل ديناميكي مع البلد"""
         from app.services.twelve_data.fundamentals import get_cash_flow
         
         symbol = self._extract_symbol_from_cache_key(cache_key)
@@ -102,30 +83,49 @@ class FinancialCache:
                 "gross_profit": record.gross_profit,
                 "operating_expense": record.operating_expense,
                 "operating_income": record.operating_income,
+                "non_operating_interest": record.non_operating_interest,
+                "other_income_expense": record.other_income_expense,
+                "pretax_income": record.pretax_income,
+                "income_tax": record.income_tax,
                 "net_income": record.net_income,
-                "ebitda": record.ebitda,
+                "net_income_continuous_operations": record.net_income_continuous_operations,
+                "minority_interests": record.minority_interests,
+                "preferred_stock_dividends": record.preferred_stock_dividends,
                 "eps_basic": record.eps_basic,
-                "eps_diluted": record.eps_diluted
+                "eps_diluted": record.eps_diluted,
+                "basic_shares_outstanding": record.basic_shares_outstanding,
+                "diluted_shares_outstanding": record.diluted_shares_outstanding,
+                "ebit": record.ebit,
+                "ebitda": record.ebitda,
+                "additional_data": record.additional_data
             }
             income_statement.append(income_data)
         
-        return {"income_statement": income_statement, "meta": {"symbol": db_records[0].symbol if db_records else ""}}
-    
+        return {
+            "income_statement": income_statement, 
+            "meta": {"symbol": db_records[0].symbol if db_records else ""}
+        }
+
     def _convert_db_balance_to_api_format(self, db_records: list) -> Dict[str, Any]:
         """تحويل بيانات الميزانية العمومية من قاعدة البيانات إلى تنسيق API"""
         balance_sheet = []
         for record in db_records:
             balance_data = {
                 "fiscal_date": record.fiscal_date.isoformat() if record.fiscal_date else None,
+                "quarter": record.quarter,
                 "year": record.year,
                 "assets": record.assets,
                 "liabilities": record.liabilities,
-                "shareholders_equity": record.shareholders_equity
+                "shareholders_equity": record.shareholders_equity,
+                "additional_data": record.additional_data
             }
             balance_sheet.append(balance_data)
         
-        return {"balance_sheet": balance_sheet, "meta": {"symbol": db_records[0].symbol if db_records else ""}}
-    
+        return {
+            "balance_sheet": balance_sheet, 
+            "meta": {"symbol": db_records[0].symbol if db_records else ""}
+        }
+
     def _convert_db_cash_flow_to_api_format(self, db_records: list) -> Dict[str, Any]:
         """تحويل بيانات التدفقات النقدية من قاعدة البيانات إلى تنسيق API"""
         cash_flow = []
@@ -137,20 +137,27 @@ class FinancialCache:
                 "operating_activities": record.operating_activities,
                 "investing_activities": record.investing_activities,
                 "financing_activities": record.financing_activities,
+                "end_cash_position": record.end_cash_position,
+                "income_tax_paid": record.income_tax_paid,
+                "interest_paid": record.interest_paid,
                 "free_cash_flow": record.free_cash_flow,
-                "net_cash_change": record.net_cash_change
+                "net_cash_change": record.net_cash_change,
+                "additional_data": record.additional_data
             }
             cash_flow.append(cash_flow_data)
         
-        return {"cash_flow": cash_flow, "meta": {"symbol": db_records[0].symbol if db_records else ""}}
-    
+        return {
+            "cash_flow": cash_flow, 
+            "meta": {"symbol": db_records[0].symbol if db_records else ""}
+        }
+
     async def _get_repository(self):
         """الحصول على repository مع جلسة قاعدة بيانات"""
         db = next(get_db())
         return FinancialRepository(db)
     
     async def get_income_statement(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
-        """جلب قائمة الدخل - Cache Hierarchy: Redis → PostgreSQL → API - زي stock_cache بالضبط"""
+        """جلب قائمة الدخل - Cache Hierarchy: Redis → PostgreSQL → API"""
         redis_key = self._get_income_key(cache_key, period, limit)
         symbol = self._extract_symbol_from_cache_key(cache_key)
         country = self._extract_country_from_cache_key(cache_key)
@@ -159,8 +166,6 @@ class FinancialCache:
         cached_data = await redis_cache.get(redis_key)
         if cached_data is not None:
             print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من الكاش")
-            # تطبيق تصحيح الأسماء
-            cached_data = await self._correct_symbol_name(symbol, cached_data)
             return cached_data
         
         # 2. 🔍 البحث في PostgreSQL (المخزن الدائم)
@@ -175,8 +180,6 @@ class FinancialCache:
                 if db_records:
                     print(f"✅ تم جلب قائمة الدخل لـ {cache_key} من قاعدة البيانات")
                     db_data = self._convert_db_income_to_api_format(db_records)
-                    # تطبيق تصحيح الأسماء
-                    db_data = await self._correct_symbol_name(symbol, db_data)
                     
                     # تخزين في الكاش للمرة القادمة
                     await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
@@ -209,25 +212,18 @@ class FinancialCache:
                         if db:
                             db.close()
                 
-                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
-                api_data = await self._correct_symbol_name(symbol, api_data)
-                
                 # تخزين في Redis
                 await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
                 print(f"💾 تم تخزين قائمة الدخل لـ {cache_key} في الكاش وقاعدة البيانات")
             else:
                 print(f"⚠️ لا توجد بيانات قائمة دخل لـ {cache_key} من API")
                 api_data = {"income_statement": [], "meta": {"symbol": symbol}}
-                # تطبيق تصحيح الأسماء حتى لو كانت البيانات فارغة
-                api_data = await self._correct_symbol_name(symbol, api_data)
             
             return api_data
                 
         except Exception as e:
             print(f"❌ خطأ في جلب البيانات من API: {e}")
             error_data = {"income_statement": [], "meta": {"symbol": symbol}}
-            # تطبيق تصحيح الأسماء حتى في حالة الخطأ
-            error_data = await self._correct_symbol_name(symbol, error_data)
             return error_data
     
     async def get_balance_sheet(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
@@ -240,8 +236,6 @@ class FinancialCache:
         cached_data = await redis_cache.get(redis_key)
         if cached_data is not None:
             print(f"✅ تم جلب الميزانية العمومية لـ {cache_key} من الكاش")
-            # تطبيق تصحيح الأسماء
-            cached_data = await self._correct_symbol_name(symbol, cached_data)
             return cached_data
         
         # 2. 🔍 البحث في PostgreSQL
@@ -256,8 +250,6 @@ class FinancialCache:
                 if db_records:
                     print(f"✅ تم جلب الميزانية العمومية لـ {cache_key} من قاعدة البيانات")
                     db_data = self._convert_db_balance_to_api_format(db_records)
-                    # تطبيق تصحيح الأسماء
-                    db_data = await self._correct_symbol_name(symbol, db_data)
                     
                     await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
                     return db_data
@@ -288,24 +280,17 @@ class FinancialCache:
                         if db:
                             db.close()
                 
-                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
-                api_data = await self._correct_symbol_name(symbol, api_data)
-                
                 await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
                 print(f"💾 تم تخزين الميزانية العمومية لـ {cache_key} في الكاش وقاعدة البيانات")
             else:
                 print(f"⚠️ لا توجد بيانات ميزانية عمومية لـ {cache_key} من API")
                 api_data = {"balance_sheet": [], "meta": {"symbol": symbol}}
-                # تطبيق تصحيح الأسماء
-                api_data = await self._correct_symbol_name(symbol, api_data)
             
             return api_data
             
         except Exception as e:
             print(f"❌ خطأ في جلب البيانات من API: {e}")
             error_data = {"balance_sheet": [], "meta": {"symbol": symbol}}
-            # تطبيق تصحيح الأسماء
-            error_data = await self._correct_symbol_name(symbol, error_data)
             return error_data
     
     async def get_cash_flow(self, cache_key: str, period: str = "annual", limit: int = 6) -> Dict[str, Any]:
@@ -318,8 +303,6 @@ class FinancialCache:
         cached_data = await redis_cache.get(redis_key)
         if cached_data is not None:
             print(f"✅ تم جلب التدفقات النقدية لـ {cache_key} من الكاش")
-            # تطبيق تصحيح الأسماء
-            cached_data = await self._correct_symbol_name(symbol, cached_data)
             return cached_data
         
         # 2. 🔍 البحث في PostgreSQL
@@ -334,8 +317,6 @@ class FinancialCache:
                 if db_records:
                     print(f"✅ تم جلب التدفقات النقدية لـ {cache_key} من قاعدة البيانات")
                     db_data = self._convert_db_cash_flow_to_api_format(db_records)
-                    # تطبيق تصحيح الأسماء
-                    db_data = await self._correct_symbol_name(symbol, db_data)
                     
                     await redis_cache.set(redis_key, db_data, expire=self.db_cache_expire)
                     return db_data
@@ -366,24 +347,17 @@ class FinancialCache:
                         if db:
                             db.close()
                 
-                # تطبيق تصحيح الأسماء قبل التخزين في الكاش
-                api_data = await self._correct_symbol_name(symbol, api_data)
-                
                 await redis_cache.set(redis_key, api_data, expire=self.cache_expire)
                 print(f"💾 تم تخزين التدفقات النقدية لـ {cache_key} في الكاش وقاعدة البيانات")
             else:
                 print(f"⚠️ لا توجد بيانات تدفقات نقدية لـ {cache_key} من API")
                 api_data = {"cash_flow": [], "meta": {"symbol": symbol}}
-                # تطبيق تصحيح الأسماء
-                api_data = await self._correct_symbol_name(symbol, api_data)
             
             return api_data
             
         except Exception as e:
             print(f"❌ خطأ في جلب البيانات من API: {e}")
             error_data = {"cash_flow": [], "meta": {"symbol": symbol}}
-            # تطبيق تصحيح الأسماء
-            error_data = await self._correct_symbol_name(symbol, error_data)
             return error_data
 
     async def clear_financial_cache(self, symbol: str = None, country: str = "Saudi Arabia"):

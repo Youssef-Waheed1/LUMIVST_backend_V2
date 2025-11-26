@@ -10,6 +10,8 @@ from alembic import context
 from app.core.database import Base
 import app.models.profile 
 import app.models.quote
+import app.models.user
+import app.models.contact
 
 config = context.config
 fileConfig(config.config_file_name)

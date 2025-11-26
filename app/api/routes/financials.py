@@ -4,12 +4,10 @@ from datetime import datetime
 import json
 from app.core.database import get_db
 from app.models.financials import IncomeStatement, BalanceSheet, CashFlow
-from app.services.cache.financial_cache import financial_cache
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
 
 
-#  إضافة route جديد لجلب البيانات من قاعدة البيانات المحلية
 @router.get("/{symbol}")
 async def get_financial_data_from_db(
     symbol: str,
@@ -25,12 +23,10 @@ async def get_financial_data_from_db(
         
         # بناء الاستعلام بناءً على الفترة
         if period == "annual":
-            # البيانات السنوية (بدون quarter)
             income_filter = IncomeStatement.quarter.is_(None)
             balance_filter = BalanceSheet.quarter.is_(None)
             cashflow_filter = CashFlow.quarter.is_(None)
         else:
-            # البيانات الربع سنوية (مع quarter)
             income_filter = IncomeStatement.quarter.isnot(None)
             balance_filter = BalanceSheet.quarter.isnot(None)
             cashflow_filter = CashFlow.quarter.isnot(None)
@@ -65,6 +61,14 @@ async def get_financial_data_from_db(
                 if isinstance(value, datetime):
                     value = value.isoformat()
                 result[column.name] = value
+            
+            if result.get('fiscal_date') and not result.get('year'):
+                try:
+                    date_obj = datetime.fromisoformat(result['fiscal_date'].replace('Z', '+00:00'))
+                    result['year'] = date_obj.year
+                except:
+                    pass
+            
             return result
         
         response_data = {
@@ -100,11 +104,11 @@ async def income_statement(
     try:
         print(f"📈 طلب قائمة الدخل: {symbol} - البلد: {country} - الفترة: {period}")
         
-        # استخدام البلد والرمز معاً كمفتاح فريد
+        from app.services.cache.financial_cache import financial_cache
+        
         cache_key = f"{country}:{symbol}"
         data = await financial_cache.get_income_statement(cache_key, period=period, limit=limit)
         
-        # تأكد من أن البيانات في التنسيق الصحيح
         if isinstance(data, str):
             try:
                 data = json.loads(data)
@@ -129,6 +133,8 @@ async def balance_sheet(
 ):
     try:
         print(f"📊 طلب الميزانية العمومية: {symbol} - البلد: {country} - الفترة: {period}")
+        
+        from app.services.cache.financial_cache import financial_cache
         
         cache_key = f"{country}:{symbol}"
         data = await financial_cache.get_balance_sheet(cache_key, period=period, limit=limit)
@@ -158,6 +164,8 @@ async def cash_flow(
     try:
         print(f"💰 طلب التدفقات النقدية: {symbol} - البلد: {country} - الفترة: {period}")
         
+        from app.services.cache.financial_cache import financial_cache
+        
         cache_key = f"{country}:{symbol}"
         data = await financial_cache.get_cash_flow(cache_key, period=period, limit=limit)
         
@@ -175,6 +183,9 @@ async def cash_flow(
     except Exception as e:
         print(f"❌ خطأ في التدفقات النقدية لـ {symbol}: {e}")
         return {"cash_flow": []}
+    
+
+    
 
 # @router.post("/load/{symbol}")
 # async def load_financial_data(

@@ -1,12 +1,8 @@
-# app/core/redis.py
-
 import redis.asyncio as redis
 import os
 import json
 from typing import Any, Optional, List
-
-# ✅ استخدام REDIS_URL من config
-from app.core.config import REDIS_URL
+from app.core.config import settings
 
 class RedisCache:
     def __init__(self):
@@ -16,15 +12,15 @@ class RedisCache:
     async def init_redis(self):
         """تهيئة اتصال Redis"""
         try:
-            # ⭐ استخدام REDIS_URL مباشرة
             self.redis_client = redis.from_url(
-                REDIS_URL,
+                settings.REDIS_URL,
                 decode_responses=True,
-                socket_connect_timeout=5,
-                retry_on_timeout=True
+                socket_connect_timeout=10,
+                socket_keepalive=True,
+                retry_on_timeout=True,
+                max_connections=50
             )
 
-            # اختبار الاتصال
             await self.redis_client.ping()
             self.is_connected = True
             print("✅ تم الاتصال بـ Redis بنجاح")
@@ -36,78 +32,61 @@ class RedisCache:
             return False
 
     async def ensure_connection(self):
-        """التأكد من وجود اتصال نشط"""
         if not self.is_connected or not self.redis_client:
             return await self.init_redis()
         return True
     
     async def set(self, key: str, value: Any, expire: int = 86400) -> bool:
-        """تخزين بيانات في الكاش لمدة 24 ساعة افتراضياً"""
         if not await self.ensure_connection():
             return False
-            
         try:
-            # تأكد من تحويل جميع القيم إلى JSON string
             if isinstance(value, (dict, list)):
                 serialized_value = json.dumps(value, ensure_ascii=False, default=str)
             else:
                 serialized_value = str(value)
-            
             result = await self.redis_client.set(key, serialized_value, ex=expire)
             return result
         except Exception as e:
-            print(f"❌ خطأ في تخزين الكاش للمفتاح {key}: {e}")
+            print(f"❌ خطأ في تخزين الكاش: {e}")
             return False
     
     async def get(self, key: str) -> Optional[Any]:
-        """جلب بيانات من الكاش"""
         if not await self.ensure_connection():
             return None
-            
         try:
             value = await self.redis_client.get(key)
             if value is None:
                 return None
-                
-            # حاول تحليل JSON أولاً
             try:
                 return json.loads(value)
             except json.JSONDecodeError:
-                # إذا فشل التحليل، ارجع القيمة كما هي
                 return value
-                
         except Exception as e:
-            print(f"❌ خطأ في جلب الكاش للمفتاح {key}: {e}")
+            print(f"❌ خطأ في جلب الكاش: {e}")
             return None
     
     async def delete(self, key: str) -> bool:
-        """حذف بيانات من الكاش"""
         if not await self.ensure_connection():
             return False
-            
         try:
             result = await self.redis_client.delete(key)
             return result > 0
         except Exception as e:
-            print(f"❌ خطأ في حذف الكاش للمفتاح {key}: {e}")
+            print(f"❌ خطأ في حذف الكاش: {e}")
             return False
     
     async def exists(self, key: str) -> bool:
-        """التحقق من وجود مفتاح في الكاش"""
         if not await self.ensure_connection():
             return False
-            
         try:
             return await self.redis_client.exists(key) == 1
         except Exception as e:
-            print(f"❌ خطأ في التحقق من الكاش للمفتاح {key}: {e}")
+            print(f"❌ خطأ في التحقق من الكاش: {e}")
             return False
     
     async def flush_all(self) -> bool:
-        """مسح كل الكاش"""
         if not await self.ensure_connection():
             return False
-            
         try:
             await self.redis_client.flushall()
             print("✅ تم مسح كل الكاش")
@@ -117,31 +96,51 @@ class RedisCache:
             return False
 
     async def keys(self, pattern: str) -> List[str]:
-        """الحصول على جميع المفاتيح التي تطابق النمط"""
         if not await self.ensure_connection():
-            print("❌ Redis غير متصل")
-            return []  # إرجاع قائمة فارغة بدلاً من None
-        
+            return []  
         try:
             keys = await self.redis_client.keys(pattern)
-            return keys or []  # ✅ إرجاع قائمة فارغة إذا كانت None
+            return keys or []  
         except Exception as e:
-            print(f"❌ خطأ في جلب المفاتيح للنمط {pattern}: {e}")
-            return []  # ✅ إرجاع قائمة فارغة بدلاً من None
+            print(f"❌ خطأ في جلب المفاتيح: {e}")
+            return []  
 
     async def scan_iter(self, pattern: str):
-        """استخدام SCAN للحصول على المفاتيح (أفضل للأداء)"""
         if not await self.ensure_connection():
             return []
-        
         try:
             keys = []
             async for key in self.redis_client.scan_iter(match=pattern):
                 keys.append(key)
             return keys
         except Exception as e:
-            print(f"❌ خطأ في SCAN للنمط {pattern}: {e}")
+            print(f"❌ خطأ في SCAN: {e}")
             return []
 
-# إنشاء نسخة عامة
 redis_cache = RedisCache()
+
+async def store_reset_token(user_id: int, token: str, expire_minutes: int = 15):
+    """تخزين توكن استعادة كلمة المرور"""
+    await redis_cache.set(f"reset_token:{token}", str(user_id), expire=expire_minutes * 60)
+
+async def get_reset_token(token: str) -> Optional[int]:
+    """جلب user_id من توكن الاستعادة"""
+    result = await redis_cache.get(f"reset_token:{token}")
+    return int(result) if result else None
+
+async def delete_reset_token(token: str):
+    """حذف توكن الاستعادة"""
+    await redis_cache.delete(f"reset_token:{token}")
+
+async def store_verification_token(user_id: int, token: str, expire_minutes: int = 60):
+    """تخزين توكن التحقق من البريد"""
+    await redis_cache.set(f"verify_token:{token}", str(user_id), expire=expire_minutes * 60)
+
+async def get_verification_token(token: str) -> Optional[int]:
+    """جلب user_id من توكن التحقق"""
+    result = await redis_cache.get(f"verify_token:{token}")
+    return int(result) if result else None
+
+async def delete_verification_token(token: str):
+    """حذف توكن التحقق"""
+    await redis_cache.delete(f"verify_token:{token}")

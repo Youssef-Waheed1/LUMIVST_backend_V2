@@ -19,7 +19,7 @@ class StockResponse(BaseModel):
     currency: str = "SAR"
     price: Optional[Union[float, str]] = None
     change: Optional[Union[float, str]] = None
-    change_percent: Optional[Union[float, str]] = None
+    percent_change: Optional[Union[float, str]] = None
     previous_close: Optional[Union[float, str]] = None
     volume: Optional[Union[int, str]] = None
     turnover: Optional[str] = None
@@ -65,7 +65,7 @@ class StockResponse(BaseModel):
         'fifty_two_week_low', 'fifty_two_week_high', 
         'fifty_two_week_low_change', 'fifty_two_week_high_change',
         'fifty_two_week_low_change_percent', 'fifty_two_week_high_change_percent',
-        'price', 'change', 'change_percent', 'previous_close', 'open', 'high', 'low',
+        'price', 'change', 'percent_change', 'previous_close', 'open', 'high', 'low',
         # حقول Change الجديدة
         'change_12m', 'change_9m', 'change_6m', 'change_3m', 'change_1m', 'change_2w', 'change_1w',
         mode='before'

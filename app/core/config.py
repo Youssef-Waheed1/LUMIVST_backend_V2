@@ -3,40 +3,26 @@
 import os
 from dotenv import load_dotenv
 
-# تحميل متغيرات البيئة
 load_dotenv()
 
-# ✅ إعدادات PostgreSQL
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:youssef505050@localhost:5432/lumivst_db")
-
-
-
-# ✅ إعدادات Redis
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:7424")
-
-# ✅ إعدادات الكاش
-CACHE_EXPIRE_SECONDS = int(os.getenv("CACHE_EXPIRE_SECONDS", "300"))  # 5 دقائق
-STOCK_PRICE_CACHE_SECONDS = int(os.getenv("STOCK_PRICE_CACHE_SECONDS", "300"))
-
-# إعدادات التسجيل
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# API Settings
-BASE_URL = "https://api.twelvedata.com"
-API_KEY = os.getenv("TWELVE_DATA_API_KEY", "8e06aec81b4d415d905af639ce78449b")
-
-# ⭐⭐⭐ أضيف Settings class مرة تانية
 class Settings:
     def __init__(self):
-        self.DATABASE_URL = DATABASE_URL
-        self.REDIS_URL = REDIS_URL
-        self.CACHE_EXPIRE_SECONDS = CACHE_EXPIRE_SECONDS
-        self.api_key = API_KEY
-        self.base_url = BASE_URL
+        # ⚠️ إزالة القيم الافتراضية المحلية في الإنتاج
+        self.DATABASE_URL = os.getenv("DATABASE_URL")
+        self.REDIS_URL = os.getenv("REDIS_URL")
+        self.CACHE_EXPIRE_SECONDS = int(os.getenv("CACHE_EXPIRE_SECONDS", "300"))
+        self.STOCK_PRICE_CACHE_SECONDS = int(os.getenv("STOCK_PRICE_CACHE_SECONDS", "300"))
+        self.API_KEY = os.getenv("TWELVE_DATA_API_KEY")
+        self.BASE_URL = "https://api.twelvedata.com"
+        
+        # ⚠️ تحديث الـ CORS للإنتاج
+        self.ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+        
+        # إعدادات إضافية مهمة للإنتاج
+        self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+        self.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
-# إنشاء instance
 settings = Settings()
-
 
 
 

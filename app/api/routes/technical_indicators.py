@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize services
 indicators_service = TechnicalIndicatorsService(
-    api_key=settings.api_key,
-    base_url=settings.base_url
+    api_key=settings.API_KEY,
+    base_url=settings.BASE_URL
 )
 
 @router.get("/test")
@@ -26,8 +26,8 @@ async def test_route():
     return {
         "message": "✅ Technical Indicators is working!",
         "timestamp": datetime.now().isoformat(),
-        "api_key_configured": bool(settings.api_key),
-        "base_url": settings.base_url
+        "api_key_configured": bool(settings.API_KEY),
+        "base_url": settings.BASE_URL
     }
 
 
@@ -363,8 +363,8 @@ async def get_service_status():
     return {
         "status": "active",
         "timestamp": datetime.now().isoformat(),
-        "api_key_configured": bool(settings.api_key),
-        "base_url": settings.base_url,
+        "api_key_configured": bool(settings.API_KEY),
+        "base_url": settings.BASE_URL,
         "cache_service": True,
         "database": True
     }

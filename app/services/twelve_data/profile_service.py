@@ -2,7 +2,7 @@
 
 import httpx
 from typing import Dict, List, Any, Optional
-from app.core.config import API_KEY
+from app.core.config import settings
 
 def clean_symbol(symbol: str) -> str:
     """تنظيف رمز الشركة"""
@@ -19,7 +19,7 @@ async def get_company_profile(symbol: str, country: str = "Saudi Arabia") -> Opt
         params = {
             "symbol": clean_sym,
             "country": country,
-            "apikey": API_KEY
+            "apikey": settings.API_KEY
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:

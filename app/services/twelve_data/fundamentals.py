@@ -1,5 +1,5 @@
 import httpx
-from app.core.config import BASE_URL, API_KEY
+from app.core.config import settings
 import json
 
 def clean_symbol(symbol: str) -> str:

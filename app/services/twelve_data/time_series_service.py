@@ -2,7 +2,7 @@ import httpx
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
-from app.core.config import API_KEY
+from app.core.config import settings
 
 def clean_symbol(symbol: str) -> str:
     """تنظيف رمز الشركة"""

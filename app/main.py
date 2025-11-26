@@ -1,40 +1,38 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, statistics, technical_indicators
+from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact
 from app.core.redis import redis_cache
 from app.core.database import create_tables
-from app.services.cache.stock_cache import SAUDI_STOCKS  # ⭐ أضف هذا الاستيراد
-from app.services.rs_rating import calculate_all_rs_ratings  # ⭐ أضف هذا الاستيراد
+from app.services.cache.stock_cache import SAUDI_STOCKS
+from app.services.rs_rating import calculate_all_rs_ratings
 import asyncio
+from app.core.config import settings 
 
-# إنشاء الـ FastAPI app
 app = FastAPI(
     title="Saudi Stocks API",
-    description="API for Saudi Stock Market data with caching",
-    version="1.0.0"
+    description="API for Saudi Stock Market data",
+    version="1.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None
 )
 
-# إعداد CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ⎯⎯⎯⎯⎯⎯ إضافة دالة الخلفية هنا ⎯⎯⎯⎯⎯⎯
 async def _calculate_and_save_rs(symbols: list):
     """دالة خلفية لحساب RS وحفظه في DB"""
     try:
-        # حساب RS
         rs_data = await calculate_all_rs_ratings(symbols)
         
         if not rs_data:
             print("❌ No RS data calculated")
             return
         
-        # حفظ في DB
         from app.core.database import get_db
         from app.models.quote import StockQuote
         
@@ -44,7 +42,6 @@ async def _calculate_and_save_rs(symbols: list):
             for symbol, rs_scores in rs_data.items():
                 quote = db.query(StockQuote).filter(StockQuote.symbol == symbol).first()
                 if quote:
-                    # تحديث حقول RS
                     for key, value in rs_scores.items():
                         if hasattr(quote, key):
                             setattr(quote, key, value)
@@ -58,19 +55,19 @@ async def _calculate_and_save_rs(symbols: list):
         finally:
             db.close()
             
-        # تحديث Redis cache
         await redis_cache.delete("tadawul:all:Saudi Arabia")
         
     except Exception as e:
         print(f"❌ Error in background RS calculation: {e}")
-# ⎯⎯⎯⎯⎯⎯ نهاية الإضافة ⎯⎯⎯⎯⎯⎯
 
-# ⭐⭐⭐ تسجيل الـ routers مباشرة - تأكد من كلهم
+# Register routers
+app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(stocks.router)
 app.include_router(financials.router)
 app.include_router(cache.router)
 app.include_router(statistics.router)
 app.include_router(technical_indicators.router)
+app.include_router(contact.router, prefix="/api")
 
 # Event handlers
 @app.on_event("startup")
@@ -84,11 +81,10 @@ async def startup_event():
     else:
         print("✅ Redis cache initialized successfully")
     
-    # ⭐⭐⭐ تشغيل المجدول (scheduler) هنا
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = AsyncIOScheduler()
     
-    @scheduler.scheduled_job('cron', hour=22, minute=0)  # كل يوم الساعة 10 مساءً
+    @scheduler.scheduled_job('cron', hour=22, minute=0)
     async def daily_rs_update():
         print("🔄 Running daily RS update...")
         await _calculate_and_save_rs(list(SAUDI_STOCKS))
@@ -96,7 +92,6 @@ async def startup_event():
     scheduler.start()
     print("✅ Scheduler started for daily RS updates")
 
-# Routes بسيطة
 @app.get("/")
 async def root():
     return {
@@ -117,630 +112,3 @@ async def health_check():
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
     }
-
-
-
-
-
-
-
-
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from app.core.redis import redis_cache
-# from app.core.database import create_tables
-# import os
-# from typing import List, Tuple, Optional
-
-# class AppConfig:
-#     """كلاس لتكوين التطبيق"""
-    
-#     def __init__(self):
-#         self.title = "Saudi Stocks API"
-#         self.description = "API for Saudi Stock Market data with caching"
-#         self.version = "1.0.0"
-        
-#         # الحصول على النطاقات من متغيرات البيئة أو استخدام القيم الافتراضية
-#         cors_env = os.getenv("CORS_ORIGINS", "")
-#         if cors_env:
-#             self.cors_origins = cors_env.split(",")
-#         else:
-#             self.cors_origins = [
-#                 # ⭐⭐ اسمح لكل نطاقات Vercel
-#                 "https://lumivst-frontend-v2.vercel.app",
-#                 "https://lumivst-frontend-v2-git-main-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend-v2-8tevv5iug-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend-v2-*.vercel.app",
-#                 "https://*.vercel.app",
-                
-#                 # ⭐⭐ اسمح للـ backend نفسه
-#                 "web-production-e66c2.up.railway.app",
-                
-#                 # النطاقات القديمة (للتوافق)
-#                 "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend.vercel.app",
-
-#                 # التطوير المحلي
-#                 "http://localhost:3000",
-#                 "http://127.0.0.1:3000",
-#                 "http://localhost:5173",
-#             ]
-        
-#         self.routes = [
-#             {"module": "stocks", "router": "router", "prefix": None},
-#             {"module": "financials", "router": "router", "prefix": None},
-#             {"module": "cache", "router": "router", "prefix": None},
-#             {"module": "profile", "router": "router", "prefix": "/api/v1"},
-#             {"module": "quote", "router": "router", "prefix": "/api/v1"},
-#             {"module": "statistics", "router": "router", "prefix": None},
-#             {"module": "technical_indicators", "router": "router", "prefix": None},  # ⭐ جديد
-#         ]
-
-# class Application:
-#     """كلاس رئيسي لإدارة التطبيق"""
-    
-#     def __init__(self, config: AppConfig):
-#         self.config = config
-#         self.app = FastAPI(
-#             title=config.title,
-#             description=config.description,
-#             version=config.version
-#         )
-        
-#         self._setup()
-    
-#     def _setup(self):
-#         """إعداد التطبيق"""
-#         self._setup_cors()
-#         self._setup_routes()
-#         self._setup_handlers()
-    
-#     def _setup_cors(self):
-#         """إعداد CORS"""
-#         # ⭐⭐ اسمح لكل النطاقات بدون استثناء
-#         origins = ["*"]
-        
-#         self.app.add_middleware(
-#             CORSMiddleware,
-#             allow_origins=origins,
-#             allow_credentials=True,
-#             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#             allow_headers=["*"],
-#         )
-        
-#         print(f"✅ تم إعداد CORS لكل النطاقات بدون قيود")
-    
-#     def _setup_routes(self):
-#         """إعداد الـ Routes"""
-#         for route in self.config.routes:
-#             try:
-#                 module_path = f"app.api.routes.{route['module']}"
-#                 module = __import__(module_path, fromlist=[route['router']])
-#                 router = getattr(module, route['router'])
-                
-#                 if route['prefix']:
-#                     self.app.include_router(router, prefix=route['prefix'])
-#                 else:
-#                     self.app.include_router(router)
-                    
-#                 print(f"✅ تم تحميل {route['module']} router")
-                
-#             except ImportError as e:
-#                 print(f"⚠️ خطأ في تحميل {route['module']}: {e}")
-    
-#     def _setup_handlers(self):
-#         """إعداد الـ event handlers والـ endpoints"""
-        
-#         @self.app.on_event("startup")
-#         async def startup_event():
-#             print("🚀 Starting Saudi Stocks API...")
-#             create_tables()
-            
-#             redis_connected = await redis_cache.init_redis()
-#             if not redis_connected:
-#                 print("⚠️  سيتم العمل بدون كاش Redis")
-#             else:
-#                 print("✅ Redis cache initialized successfully")
-        
-#         @self.app.get("/")
-#         async def root():
-#             return {
-#                 "message": self.config.title,
-#                 "version": self.config.version,
-#                 "docs": "/docs"
-#             }
-        
-#         @self.app.get("/health")
-#         async def health_check():
-#             """فحص صحة التطبيق والكاش"""
-#             import datetime
-            
-#             redis_status = "connected" if redis_cache.redis_client else "disconnected"
-#             return {
-#                 "status": "healthy",
-#                 "redis": redis_status,
-#                 "app": self.config.title,
-#                 "version": self.config.version,
-#                 "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-#                 "environment": os.getenv("ENVIRONMENT", "production"),
-#                 "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
-#             }
-
-# # إنشاء التطبيق
-# config = AppConfig()
-# app = Application(config).app
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from app.core.redis import redis_cache
-# from app.core.database import create_tables
-# import os
-# from typing import List, Tuple, Optional
-
-# class AppConfig:
-#     """كلاس لتكوين التطبيق"""
-    
-#     def __init__(self):
-#         self.title = "Saudi Stocks API"
-#         self.description = "API for Saudi Stock Market data with caching"
-#         self.version = "1.0.0"
-        
-#         # الحصول على النطاقات من متغيرات البيئة أو استخدام القيم الافتراضية
-#         cors_env = os.getenv("CORS_ORIGINS", "")
-#         if cors_env:
-#             self.cors_origins = cors_env.split(",")
-#         else:
-#             self.cors_origins = [
-#                 # ⭐⭐ اسمح لكل نطاقات Vercel
-#                 "https://lumivst-frontend-v2.vercel.app",
-#                 "https://lumivst-frontend-v2-git-main-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend-v2-8tevv5iug-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend-v2-*.vercel.app",
-#                 "https://*.vercel.app",
-                
-#                 # ⭐⭐ اسمح للـ backend نفسه
-#                 "web-production-e66c2.up.railway.app",
-                
-#                 # النطاقات القديمة (للتوافق)
-#                 "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend.vercel.app",
-
-#                 # التطوير المحلي
-#                 "http://localhost:3000",
-#                 "http://127.0.0.1:3000",
-#                 "http://localhost:5173",
-#             ]
-        
-#         self.routes = [
-#             {"module": "stocks", "router": "router", "prefix": None},
-#             {"module": "financials", "router": "router", "prefix": None},
-#             {"module": "cache", "router": "router", "prefix": None},
-#             {"module": "profile", "router": "router", "prefix": "/api/v1"},
-#             {"module": "quote", "router": "router", "prefix": "/api/v1"},
-#             {"module": "statistics", "router": "router", "prefix": None},
-#             {"module": "technical_indicators", "router": "router", "prefix": None},  #  جديد
-#         ]
-
-# class Application:
-#     """كلاس رئيسي لإدارة التطبيق"""
-    
-#     def __init__(self, config: AppConfig):
-#         self.config = config
-#         self.app = FastAPI(
-#             title=config.title,
-#             description=config.description,
-#             version=config.version
-#         )
-        
-#         self._setup()
-    
-#     def _setup(self):
-#         """إعداد التطبيق"""
-#         self._setup_cors()
-#         self._setup_routes()
-#         self._setup_handlers()
-    
-#     def _setup_cors(self):
-#         """إعداد CORS"""
-#         # ⭐⭐ اسمح لكل النطاقات بدون استثناء
-#         origins = ["*"]
-        
-#         self.app.add_middleware(
-#             CORSMiddleware,
-#             allow_origins=origins,
-#             allow_credentials=True,
-#             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#             allow_headers=["*"],
-#         )
-        
-#         print(f"✅ تم إعداد CORS لكل النطاقات بدون قيود")
-    
-#     def _setup_routes(self):
-#         """إعداد الـ Routes"""
-#         for route in self.config.routes:
-#             try:
-#                 module_path = f"app.api.routes.{route['module']}"
-#                 module = __import__(module_path, fromlist=[route['router']])
-#                 router = getattr(module, route['router'])
-                
-#                 if route['prefix']:
-#                     self.app.include_router(router, prefix=route['prefix'])
-#                 else:
-#                     self.app.include_router(router)
-                    
-#                 print(f"✅ تم تحميل {route['module']} router")
-                
-#             except ImportError as e:
-#                 print(f"⚠️ خطأ في تحميل {route['module']}: {e}")
-    
-#     def _setup_handlers(self):
-#         """إعداد الـ event handlers والـ endpoints"""
-        
-#         @self.app.on_event("startup")
-#         async def startup_event():
-#             print("🚀 Starting Saudi Stocks API...")
-#             create_tables()
-            
-#             redis_connected = await redis_cache.init_redis()
-#             if not redis_connected:
-#                 print("⚠️  سيتم العمل بدون كاش Redis")
-#             else:
-#                 print("✅ Redis cache initialized successfully")
-        
-#         @self.app.get("/")
-#         async def root():
-#             return {
-#                 "message": self.config.title,
-#                 "version": self.config.version,
-#                 "docs": "/docs"
-#             }
-        
-#         @self.app.get("/health")
-#         async def health_check():
-#             """فحص صحة التطبيق والكاش"""
-#             import datetime
-            
-#             redis_status = "connected" if redis_cache.redis_client else "disconnected"
-#             return {
-#                 "status": "healthy",
-#                 "redis": redis_status,
-#                 "app": self.config.title,
-#                 "version": self.config.version,
-#                 "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-#                 "environment": os.getenv("ENVIRONMENT", "production"),
-#                 "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
-#             }
-
-# # إنشاء التطبيق
-# config = AppConfig()
-# app = Application(config).app
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from app.core.redis import redis_cache
-# from app.core.database import create_tables
-# import os
-# from typing import List, Tuple, Optional
-
-# class AppConfig:
-#     """كلاس لتكوين التطبيق"""
-    
-#     def __init__(self):
-#         self.title = "Saudi Stocks API"
-#         self.description = "API for Saudi Stock Market data with caching"
-#         self.version = "1.0.0"
-        
-#         # الحصول على النطاقات من متغيرات البيئة أو استخدام القيم الافتراضية
-#         cors_env = os.getenv("CORS_ORIGINS", "")
-#         if cors_env:
-#             self.cors_origins = cors_env.split(",")
-#         else:
-#             self.cors_origins = [
-#                 # النطاقات الجديدة من Vercel deployment
-#                 "https://lumivst-frontend-v2-git-main-youssefs-projects-c6c3030a.vercel.app",
-#                 "https://lumivst-frontend-v2.vercel.app",
-#                 # النطاقات القديمة (للتوافق)
-
-#                 # التطوير المحلي
-#                 "http://localhost:3000",
-#                 "http://127.0.0.1:3000",
-#             ]
-        
-#         self.routes = [
-#             {"module": "stocks", "router": "router", "prefix": None},
-#             {"module": "financials", "router": "router", "prefix": None},
-#             {"module": "cache", "router": "router", "prefix": None},
-#             {"module": "profile", "router": "router", "prefix": "/api/v1"},
-#             {"module": "quote", "router": "router", "prefix": "/api/v1"},
-#             {"module": "statistics", "router": "router", "prefix": None},
-#         ]
-
-# class Application:
-#     """كلاس رئيسي لإدارة التطبيق"""
-    
-#     def __init__(self, config: AppConfig):
-#         self.config = config
-#         self.app = FastAPI(
-#             title=config.title,
-#             description=config.description,
-#             version=config.version
-#         )
-        
-#         self._setup()
-    
-#     def _setup(self):
-#         """إعداد التطبيق"""
-#         self._setup_cors()
-#         self._setup_routes()
-#         self._setup_handlers()
-    
-#     def _setup_cors(self):
-#         """إعداد CORS"""
-#         origins = self.config.cors_origins.copy()
-        
-#         # إضافة نطاقات إضافية للبيئة التطويرية
-#         if os.getenv("ENVIRONMENT") == "development":
-#             origins.extend([
-#                 "http://127.0.0.1:3000",
-#                 "http://localhost:3001",
-#                 "http://localhost:5173",
-#                 "https://lumivst-frontend-v2.vercel.app"  # Vite dev server
-#             ])
-        
-#         # تنظيف وإزالة التكرارات
-#         origins = list(set(origins))
-        
-#         self.app.add_middleware(
-#             CORSMiddleware,
-#             allow_origins=origins,
-#             allow_credentials=True,
-#             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#             allow_headers=["*"],
-#         )
-        
-#         print(f"✅ تم إعداد CORS للنطاقات: {origins}")
-    
-#     def _setup_routes(self):
-#         """إعداد الـ Routes"""
-#         for route in self.config.routes:
-#             try:
-#                 module_path = f"app.api.routes.{route['module']}"
-#                 module = __import__(module_path, fromlist=[route['router']])
-#                 router = getattr(module, route['router'])
-                
-#                 if route['prefix']:
-#                     self.app.include_router(router, prefix=route['prefix'])
-#                 else:
-#                     self.app.include_router(router)
-                    
-#                 print(f"✅ تم تحميل {route['module']} router")
-                
-#             except ImportError as e:
-#                 print(f"⚠️ خطأ في تحميل {route['module']}: {e}")
-    
-#     def _setup_handlers(self):
-#         """إعداد الـ event handlers والـ endpoints"""
-        
-#         @self.app.on_event("startup")
-#         async def startup_event():
-#             print("🚀 Starting Saudi Stocks API...")
-#             create_tables()
-            
-#             redis_connected = await redis_cache.init_redis()
-#             if not redis_connected:
-#                 print("⚠️  سيتم العمل بدون كاش Redis")
-#             else:
-#                 print("✅ Redis cache initialized successfully")
-        
-#         @self.app.get("/")
-#         async def root():
-#             return {
-#                 "message": self.config.title,
-#                 "version": self.config.version,
-#                 "docs": "/docs"
-#             }
-        
-#         @self.app.get("/health")
-#         async def health_check():
-#             """فحص صحة التطبيق والكاش"""
-#             import datetime
-            
-#             redis_status = "connected" if redis_cache.redis_client else "disconnected"
-#             return {
-#                 "status": "healthy",
-#                 "redis": redis_status,
-#                 "app": self.config.title,
-#                 "version": self.config.version,
-#                 "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-#                 "environment": os.getenv("ENVIRONMENT", "production"),
-#                 "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
-#             }
-
-# # إنشاء التطبيق
-# config = AppConfig()
-# app = Application(config).app
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from app.core.redis import redis_cache
-# from app.core.database import create_tables  # ⭐ أضف هذا
-# from app.api.routes import stocks, financials, cache, profile, quote
-# import os
-
-# app = FastAPI(
-#     title="Saudi Stocks API",
-#     description="API for Saudi Stock Market data with caching",
-#     version="1.0.0"
-# )
-
-# # ⚡ إعداد CORS ديناميكي بناءً على البيئة
-# origins = [
-#     "https://lumivst-frontend-git-main-youssefs-projects-c6c3030a.vercel.app",
-#     "https://lumivst-frontend.vercel.app",
-#     "http://localhost:3000",
-# ]
-
-# if os.getenv("ENVIRONMENT") == "development":
-#     origins.extend([
-#         "http://127.0.0.1:3000",
-#         "http://localhost:3001",
-#     ])
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#     allow_headers=["*"],
-# )
-
-# # ⭐ إضافة كل الـ routes
-
-
-# # app.include_router(financials.router, prefix="/api")  # ⭐ إضافة prefix
-# # app.include_router(cache.router, prefix="/api")  # ⭐ إضافة prefix
-# app.include_router(stocks.router)
-# app.include_router(financials.router)
-# app.include_router(cache.router)
-# app.include_router(profile.router, prefix="/api/v1")
-# app.include_router(quote.router, prefix="/api/v1")
-
-# @app.on_event("startup")
-# async def startup_event():
-#     """تهيئة الاتصالات عند بدء التشغيل"""
-#     print("🚀 Starting Saudi Stocks API...")
-    
-#     # ⭐ إنشاء الجداول في PostgreSQL
-#     create_tables()
-    
-#     # تهيئة Redis
-#     redis_connected = await redis_cache.init_redis()
-#     if not redis_connected:
-#         print("⚠️  سيتم العمل بدون كاش Redis")
-#     else:
-#         print("✅ Redis cache initialized successfully")
-
-# @app.get("/")
-# async def root():
-#     return {
-#         "message": "Saudi Stocks API with Redis Caching",
-#         "version": "1.0.0",
-#         "docs": "/docs"
-#     }
-
-# @app.get("/health")
-# async def health_check():
-#     """فحص صحة التطبيق والكاش"""
-#     redis_status = "connected" if redis_cache.redis_client else "disconnected"
-#     return {
-#         "status": "healthy",
-#         "redis": redis_status,
-#         "timestamp": "2024-01-01T00:00:00Z",
-#         "message": "API is running" + (" with cache" if redis_cache.redis_client else " without cache")
-#     }

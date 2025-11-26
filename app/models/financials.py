@@ -29,7 +29,8 @@ class IncomeStatement(Base):
     
     # الحقول الجديدة المطلوبة بناءً على الـ logs
     net_income_continuous_operations = Column(Float, nullable=True)
-    minority_interests = Column(Float, nullable=True)  # ⬅️ أضف هذا الحقل
+    minority_interests = Column(Float, nullable=True)  
+    preferred_stock_dividends = Column(Float, nullable=True)  
     
     eps_basic = Column(Float, nullable=True)
     eps_diluted = Column(Float, nullable=True)
@@ -91,7 +92,7 @@ class CashFlow(Base):
     
     # الحقول الجديدة المطلوبة بناءً على الـ logs
     income_tax_paid = Column(Float, nullable=True)
-    interest_paid = Column(Float, nullable=True)  # ⬅️ أضف هذا الحقل
+    interest_paid = Column(Float, nullable=True)  
     
     # حقل إضافي لاستيعاب أي بيانات أخرى
     additional_data = Column(JSONB, nullable=True)

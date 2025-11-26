@@ -31,6 +31,9 @@ class IncomeStatementBase(BaseModel):
     diluted_shares_outstanding: Optional[float] = None
     ebit: Optional[float] = None
     ebitda: Optional[float] = None
+    net_income_continuous_operations: Optional[float] = None
+    minority_interests: Optional[float] = None
+    preferred_stock_dividends: Optional[float] = None
 
 class IncomeStatement(IncomeStatementBase):
     id: int
@@ -124,6 +127,7 @@ class ShareholdersEquity(BaseModel):
 
 class BalanceSheetBase(BaseModel):
     fiscal_date: date
+    quarter: Optional[str] = None
     year: int
     assets: Optional[Assets] = None
     liabilities: Optional[Liabilities] = None
