@@ -15,9 +15,10 @@ class RedisCache:
             self.redis_client = redis.from_url(
                 settings.REDIS_URL,
                 decode_responses=True,
-                socket_connect_timeout=10,
+                socket_connect_timeout=2,
+                socket_timeout=2,
                 socket_keepalive=True,
-                retry_on_timeout=True,
+                retry_on_timeout=False,
                 max_connections=50
             )
 

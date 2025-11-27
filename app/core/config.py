@@ -23,6 +23,13 @@ class Settings:
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
         self.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
+        # Email Settings
+        self.SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+        self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+        self.SMTP_USER = os.getenv("SMTP_USER", "")
+        self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+        self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@lumivst.com")
+
 settings = Settings()
 
 

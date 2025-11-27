@@ -31,39 +31,40 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-# ✅ دوال Redis معدلة لتعمل مع redis_cache (مع معالجة الأخطاء)
 async def store_token_in_redis(user_id: int, token: str):
     """تخزين التوكن في Redis مع expiry"""
     try:
-        if redis_cache.redis_client:
-            await redis_cache.redis_client.setex(
-                f"user_token:{user_id}", 
-                ACCESS_TOKEN_EXPIRE_MINUTES * 60, 
-                token
-            )
+        success = await redis_cache.set(
+            f"user_token:{user_id}", 
+            token, 
+            expire=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        if success:
             print(f"✅ Token stored in Redis for user {user_id}")
         else:
-            print("⚠️ Redis not connected, token not stored")
+            print("⚠️ Failed to store token in Redis")
     except Exception as e:
         print(f"⚠️ Warning: Could not store token in Redis: {e}")
 
 async def invalidate_token(user_id: int):
     """إلغاء التوكن (logout)"""
     try:
-        if redis_cache.redis_client:
-            await redis_cache.redis_client.delete(f"user_token:{user_id}")
-            print(f"✅ Token invalidated for user {user_id}")
+        await redis_cache.delete(f"user_token:{user_id}")
+        print(f"✅ Token invalidated for user {user_id}")
     except Exception as e:
         print(f"⚠️ Warning: Could not invalidate token in Redis: {e}")
 
 async def verify_token_exists(user_id: int, token: str) -> bool:
     """التحقق من أن التوكن لا يزال صالحاً في Redis"""
     try:
-        if not redis_cache.redis_client:
-            print("⚠️ Redis not connected, skipping token check")
-            return True
-            
-        stored_token = await redis_cache.redis_client.get(f"user_token:{user_id}")
+        # If Redis is down, we fallback to JWT validation only (return True)
+        if not redis_cache.is_connected:
+             # Try one last time to connect
+             if not await redis_cache.ensure_connection():
+                 print("⚠️ Redis not connected, skipping token check")
+                 return True
+
+        stored_token = await redis_cache.get(f"user_token:{user_id}")
         
         if not stored_token:
             print(f"❌ Token not found in Redis for user {user_id}")
