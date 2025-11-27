@@ -23,12 +23,12 @@ async def get_income_statement(symbol: str, country: str = "Saudi Arabia", perio
     clean_sym = clean_symbol(symbol)
     exchange = get_exchange_by_country(country)
     
-    url = f"{BASE_URL}/income_statement"
+    url = f"{settings.BASE_URL}/income_statement"
     params = {
         "symbol": clean_sym, 
         "exchange": exchange, 
         "period": period, 
-        "apikey": API_KEY,
+        "apikey": settings.API_KEY,
         "limit": limit
     }
     
@@ -56,12 +56,12 @@ async def get_balance_sheet(symbol: str, country: str = "Saudi Arabia", period: 
     clean_sym = clean_symbol(symbol)
     exchange = get_exchange_by_country(country)
     
-    url = f"{BASE_URL}/balance_sheet"
+    url = f"{settings.BASE_URL}/balance_sheet"
     params = {
         "symbol": clean_sym, 
         "exchange": exchange, 
         "period": period, 
-        "apikey": API_KEY,
+        "apikey": settings.API_KEY,
         "limit": limit
     }
     
@@ -89,12 +89,12 @@ async def get_cash_flow(symbol: str, country: str = "Saudi Arabia", period: str 
     clean_sym = clean_symbol(symbol)
     exchange = get_exchange_by_country(country)
     
-    url = f"{BASE_URL}/cash_flow"
+    url = f"{settings.BASE_URL}/cash_flow"
     params = {
         "symbol": clean_sym, 
         "exchange": exchange, 
         "period": period, 
-        "apikey": API_KEY,
+        "apikey": settings.API_KEY,
         "limit": limit
     }
     

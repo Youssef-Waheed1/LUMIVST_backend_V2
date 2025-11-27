@@ -3,17 +3,14 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.auth import *
 from app.models.user import User
-from app.core.auth import *
-from app.models.user import User
 from app.schemas.auth import *
 from app.core.redis import store_reset_token, get_reset_token, delete_reset_token, store_verification_token, get_verification_token, delete_verification_token
 import uuid
 
-
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-def register(user: UserRegister, db: Session = Depends(get_db)):
+async def register(user: UserRegister, db: Session = Depends(get_db)):
     # التحقق من وجود المستخدم
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
@@ -32,87 +29,41 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
     
     # إنشاء وتخزين التوكن
     access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
-    store_token_in_redis(db_user.id, access_token)
+    await store_token_in_redis(db_user.id, access_token)
     
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.post("/login", response_model=Token)
-def login(user: UserLogin, db: Session = Depends(get_db)):
+@router.post("/login")
+async def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="بيانات الدخول غير صحيحة")
+    if not db_user:
+        raise HTTPException(status_code=404, detail="الحساب غير موجود")
+    
+    if not verify_password(user.password, db_user.hashed_password):
+        raise HTTPException(status_code=401, detail="كلمة المرور غير صحيحة")
     
     access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
-    store_token_in_redis(db_user.id, access_token)
+    await store_token_in_redis(db_user.id, access_token)
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "user": {
+            "id": db_user.id,
+            "email": db_user.email,
+            "full_name": db_user.full_name,
+            "is_verified": db_user.is_verified
+        }
+    }
 
 @router.post("/logout")
-def logout(user_id: int, token: str = Depends(verify_token)):
-    invalidate_token(user_id)
+async def logout(user_id: int, token: str = Depends(verify_token)):
+    await invalidate_token(user_id)
     return {"message": "تم تسجيل الخروج بنجاح"}
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user(token: str = Depends(verify_token), db: Session = Depends(get_db)):
-    payload = decode_token(token)
-    user_id = int(payload.get("sub"))
-    
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from app.core.database import get_db
-from app.core.auth import *
-from app.models.user import User
-from app.core.auth import *
-from app.models.user import User
-from app.schemas.auth import *
-from app.core.redis import store_reset_token, get_reset_token, delete_reset_token, store_verification_token, get_verification_token, delete_verification_token
-import uuid
-
-
-router = APIRouter(prefix="/auth", tags=["authentication"])
-
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-def register(user: UserRegister, db: Session = Depends(get_db)):
-    # التحقق من وجود المستخدم
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="البريد الإلكتروني مسجل بالفعل")
-    
-    # إنشاء المستخدم
-    hashed_password = get_password_hash(user.password)
-    db_user = User(
-        email=user.email, 
-        hashed_password=hashed_password, 
-        full_name=user.full_name
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
-    # إنشاء وتخزين التوكن
-    access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
-    store_token_in_redis(db_user.id, access_token)
-    
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@router.post("/login", response_model=Token)
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if not db_user or not verify_password(user.password, db_user.hashed_password):
-        raise HTTPException(status_code=401, detail="بيانات الدخول غير صحيحة")
-    
-    access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
-    store_token_in_redis(db_user.id, access_token)
-    
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@router.post("/logout")
-def logout(user_id: int, token: str = Depends(verify_token)):
-    invalidate_token(user_id)
-    return {"message": "تم تسجيل الخروج بنجاح"}
-
-@router.get("/me", response_model=UserResponse)
-def get_current_user(token: str = Depends(verify_token), db: Session = Depends(get_db)):
+async def get_current_user(token: str = Depends(verify_token), db: Session = Depends(get_db)):
+    # verify_token returns the token string after validation
     payload = decode_token(token)
     user_id = int(payload.get("sub"))
     
@@ -121,6 +72,35 @@ def get_current_user(token: str = Depends(verify_token), db: Session = Depends(g
         raise HTTPException(status_code=404, detail="المستخدم غير موجود")
     
     return user
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(user_update: UserUpdate, token: str = Depends(verify_token), db: Session = Depends(get_db)):
+    payload = decode_token(token)
+    user_id = int(payload.get("sub"))
+    
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+        
+    # Update fields
+    if user_update.full_name:
+        db_user.full_name = user_update.full_name
+    
+    if user_update.email:
+        # Check if email is taken by another user
+        existing_user = db.query(User).filter(User.email == user_update.email).first()
+        if existing_user and existing_user.id != user_id:
+            raise HTTPException(status_code=400, detail="البريد الإلكتروني مستخدم بالفعل")
+        db_user.email = user_update.email
+    
+    # Only update password if provided and not empty
+    if user_update.password and len(user_update.password) >= 6:
+        db_user.hashed_password = get_password_hash(user_update.password)
+        
+    db.commit()
+    db.refresh(db_user)
+    
+    return db_user
 
 @router.post("/forget-password")
 async def forget_password(request: ForgetPasswordRequest, db: Session = Depends(get_db)):

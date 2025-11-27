@@ -17,6 +17,11 @@ class UserRegister(BaseModel):
     password: str
     full_name: str
 
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    password: Optional[str] = None
+    email: Optional[EmailStr] = None
+
 class UserResponse(BaseModel):
     id: int
     email: EmailStr
