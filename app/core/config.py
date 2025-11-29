@@ -37,7 +37,7 @@ class Settings:
         self.FACEBOOK_CLIENT_SECRET = os.getenv("FACEBOOK_CLIENT_SECRET")
         
         # Frontend URL for OAuth redirects
-        self.FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        self.FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.lumivst.com")
 
 settings = Settings()
 
