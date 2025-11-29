@@ -16,7 +16,7 @@ class Settings:
         self.BASE_URL = "https://api.twelvedata.com"
         
         # ⚠️ تحديث الـ CORS للإنتاج
-        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.rebh.ai")
+        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.lumivst.com")
         self.ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_str.split(",")]
         
         # إعدادات إضافية مهمة للإنتاج
