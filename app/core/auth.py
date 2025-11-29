@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # إعدادات JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "tqsdlvy=jtead%x)jmn5@jl%ior3_5am)k%(6=q+myn0!!v%)i")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
 
 # إعدادات Hashing - using pbkdf2_sha256 instead of bcrypt to avoid 72-byte limit
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")

@@ -15,7 +15,7 @@ class UserLogin(BaseModel):
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    full_name: str
+    full_name: Optional[str] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -26,6 +26,7 @@ class UserResponse(BaseModel):
     id: int
     email: EmailStr
     full_name: str
+    
     is_verified: bool
     
     class Config:

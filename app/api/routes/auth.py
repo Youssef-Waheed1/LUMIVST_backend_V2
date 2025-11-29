@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.auth import *
 from app.core.redis import store_reset_token, get_reset_token, delete_reset_token, store_verification_token, get_verification_token, delete_verification_token
 from app.services.email import send_email
+from app.core.config import settings
 import uuid
 import traceback
 
@@ -140,6 +141,24 @@ async def update_profile(user_update: UserUpdate, token: str = Depends(verify_to
     
     return db_user
 
+@router.delete("/delete-account")
+async def delete_account(token: str = Depends(verify_token), db: Session = Depends(get_db)):
+    payload = decode_token(token)
+    user_id = int(payload.get("sub"))
+    
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    
+    # Delete user from database
+    db.delete(db_user)
+    db.commit()
+    
+    # Invalidate token
+    await invalidate_token(user_id)
+    
+    return {"message": "تم حذف الحساب بنجاح"}
+
 @router.post("/forget-password")
 async def forget_password(request: ForgetPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
@@ -197,3 +216,140 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
     
     await delete_verification_token(token)
     return {"message": "تم التحقق من البريد الإلكتروني بنجاح"}
+
+# Social Login - Google
+import httpx
+
+@router.get("/google/login")
+async def google_login():
+    return {
+        "url": f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={settings.GOOGLE_CLIENT_ID}&redirect_uri=http://localhost:3000/auth/callback/google&scope=openid%20email%20profile"
+    }
+
+@router.post("/google/callback")
+async def google_callback(code: str, db: Session = Depends(get_db)):
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": code,
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
+        "redirect_uri": "http://localhost:3000/auth/callback/google",
+        "grant_type": "authorization_code",
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(token_url, data=data)
+        token_data = response.json()
+        
+    if "error" in token_data:
+        raise HTTPException(status_code=400, detail=token_data.get("error_description", "Google Login Failed"))
+        
+    id_token = token_data["id_token"]
+    
+    # Get user info
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={token_data['access_token']}")
+        user_info = response.json()
+        
+    email = user_info.get("email")
+    name = user_info.get("name")
+    
+    # Find or create user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Create new user
+        # Generate random password
+        random_password = str(uuid.uuid4())
+        hashed_password = get_password_hash(random_password)
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            full_name=name,
+            is_verified=True # Email verified by Google
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+    # Create JWT
+    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    await store_token_in_redis(user.id, access_token)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_verified": user.is_verified
+        }
+    }
+
+# Social Login - Facebook
+@router.get("/facebook/login")
+async def facebook_login():
+    return {
+        "url": f"https://www.facebook.com/v18.0/dialog/oauth?client_id={settings.FACEBOOK_CLIENT_ID}&redirect_uri=http://localhost:3000/auth/callback/facebook&scope=email,public_profile"
+    }
+
+@router.post("/facebook/callback")
+async def facebook_callback(code: str, db: Session = Depends(get_db)):
+    token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
+    params = {
+        "client_id": settings.FACEBOOK_CLIENT_ID,
+        "client_secret": settings.FACEBOOK_CLIENT_SECRET,
+        "redirect_uri": "http://localhost:3000/auth/callback/facebook",
+        "code": code,
+    }
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(token_url, params=params)
+        token_data = response.json()
+        
+    if "error" in token_data:
+        raise HTTPException(status_code=400, detail=token_data.get("error", {}).get("message", "Facebook Login Failed"))
+        
+    access_token = token_data["access_token"]
+    
+    # Get user info
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"https://graph.facebook.com/me?fields=id,name,email&access_token={access_token}")
+        user_info = response.json()
+        
+    email = user_info.get("email")
+    name = user_info.get("name")
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email not provided by Facebook")
+    
+    # Find or create user
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Create new user
+        random_password = str(uuid.uuid4())
+        hashed_password = get_password_hash(random_password)
+        user = User(
+            email=email,
+            hashed_password=hashed_password,
+            full_name=name,
+            is_verified=True  # Email verified by Facebook
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+    # Create JWT
+    jwt_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    await store_token_in_redis(user.id, jwt_token)
+    
+    return {
+        "access_token": jwt_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_verified": user.is_verified
+        }
+    }

@@ -30,6 +30,12 @@ class Settings:
         self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
         self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@lumivst.com")
 
+        # Social Login
+        self.GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+        self.GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+        self.FACEBOOK_CLIENT_ID = os.getenv("FACEBOOK_CLIENT_ID")
+        self.FACEBOOK_CLIENT_SECRET = os.getenv("FACEBOOK_CLIENT_SECRET")
+
 settings = Settings()
 
 
