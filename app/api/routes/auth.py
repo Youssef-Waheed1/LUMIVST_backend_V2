@@ -222,18 +222,20 @@ import httpx
 
 @router.get("/google/login")
 async def google_login():
+    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/google"
     return {
-        "url": f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={settings.GOOGLE_CLIENT_ID}&redirect_uri=http://localhost:3000/auth/callback/google&scope=openid%20email%20profile"
+        "url": f"https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id={settings.GOOGLE_CLIENT_ID}&redirect_uri={redirect_uri}&scope=openid%20email%20profile"
     }
 
 @router.post("/google/callback")
 async def google_callback(code: str, db: Session = Depends(get_db)):
     token_url = "https://oauth2.googleapis.com/token"
+    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/google"
     data = {
         "code": code,
         "client_id": settings.GOOGLE_CLIENT_ID,
         "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": "http://localhost:3000/auth/callback/google",
+        "redirect_uri": redirect_uri,
         "grant_type": "authorization_code",
     }
     
@@ -289,17 +291,19 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
 # Social Login - Facebook
 @router.get("/facebook/login")
 async def facebook_login():
+    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/facebook"
     return {
-        "url": f"https://www.facebook.com/v18.0/dialog/oauth?client_id={settings.FACEBOOK_CLIENT_ID}&redirect_uri=http://localhost:3000/auth/callback/facebook&scope=email,public_profile"
+        "url": f"https://www.facebook.com/v18.0/dialog/oauth?client_id={settings.FACEBOOK_CLIENT_ID}&redirect_uri={redirect_uri}&scope=email,public_profile"
     }
 
 @router.post("/facebook/callback")
 async def facebook_callback(code: str, db: Session = Depends(get_db)):
     token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
+    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/facebook"
     params = {
         "client_id": settings.FACEBOOK_CLIENT_ID,
         "client_secret": settings.FACEBOOK_CLIENT_SECRET,
-        "redirect_uri": "http://localhost:3000/auth/callback/facebook",
+        "redirect_uri": redirect_uri,
         "code": code,
     }
     

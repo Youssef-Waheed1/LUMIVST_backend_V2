@@ -35,6 +35,9 @@ class Settings:
         self.GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
         self.FACEBOOK_CLIENT_ID = os.getenv("FACEBOOK_CLIENT_ID")
         self.FACEBOOK_CLIENT_SECRET = os.getenv("FACEBOOK_CLIENT_SECRET")
+        
+        # Frontend URL for OAuth redirects
+        self.FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 settings = Settings()
 
