@@ -293,7 +293,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
 async def facebook_login():
     redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/facebook"
     return {
-        "url": f"https://www.facebook.com/v18.0/dialog/oauth?client_id={settings.FACEBOOK_CLIENT_ID}&redirect_uri={redirect_uri}&scope=email,public_profile"
+        "url": f"https://www.facebook.com/v18.0/dialog/oauth?client_id={settings.FACEBOOK_CLIENT_ID}&redirect_uri={redirect_uri}&scope=public_profile,email"
     }
 
 @router.post("/facebook/callback")
