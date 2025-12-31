@@ -15,4 +15,9 @@ class User(Base):
     full_name = Column(String)
     is_verified = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
+    
+    # Secure Password Reset Fields
+    reset_token_hash = Column(String, nullable=True, index=True)
+    reset_token_expires_at = Column(DateTime, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())

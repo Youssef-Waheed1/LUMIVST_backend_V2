@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact
+from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs
 from app.core.redis import redis_cache
 from app.core.database import create_tables
 from app.services.cache.stock_cache import SAUDI_STOCKS
@@ -15,6 +15,13 @@ app = FastAPI(
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None
 )
+
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.limiter import limiter
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -67,6 +74,7 @@ app.include_router(financials.router)
 app.include_router(cache.router)
 app.include_router(statistics.router)
 app.include_router(technical_indicators.router)
+app.include_router(rs.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
 
 # Event handlers
@@ -84,13 +92,16 @@ async def startup_event():
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = AsyncIOScheduler()
     
-    @scheduler.scheduled_job('cron', hour=22, minute=0)
+    @scheduler.scheduled_job('cron', hour=13, minute=0) # 13:00 UTC = 17:00 UAE Time
     async def daily_rs_update():
-        print("🔄 Running daily RS update...")
-        await _calculate_and_save_rs(list(SAUDI_STOCKS))
+        from scripts.daily_market_update import update_daily
+        print("🔄 Running daily RS update (Scraper V2 + RS V2)...")
+        # تشغيل السكريبت المتزامن في Thread منفصل عشان مياخدش الـ Thread الأساسي
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, update_daily)
     
     scheduler.start()
-    print("✅ Scheduler started for daily RS updates")
+    print("✅ Scheduler started for daily RS updates (At 13:00 UTC / 17:00 UAE)")
 
 @app.get("/")
 async def root():

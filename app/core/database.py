@@ -23,6 +23,8 @@ Base = declarative_base()
 # استيراد الـ Models
 from app.models.profile import CompanyProfile
 from app.models.quote import StockQuote
+from app.models.price import Price
+from app.models.rs_daily import RSDaily
 
 def create_tables():
     """إنشاء الجداول"""

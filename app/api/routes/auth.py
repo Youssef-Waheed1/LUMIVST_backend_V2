@@ -6,10 +6,11 @@ from app.core.auth import *
 from app.models.user import User
 from app.schemas.auth import *
 from app.core.redis import store_reset_token, get_reset_token, delete_reset_token, store_verification_token, get_verification_token, delete_verification_token
-from app.services.email import send_email
+from app.services.email_service import send_email
 from app.core.config import settings
 import uuid
 import traceback
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -19,6 +20,20 @@ async def register(user: UserRegister, background_tasks: BackgroundTasks, db: Se
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="البريد الإلكتروني مسجل بالفعل")
+    
+    import re
+    # التحقق من قوة كلمة المرور (OWASP)
+    if len(user.password) < 8:
+        raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تكون 8 أحرف على الأقل")
+    if not re.search(r"[A-Z]", user.password):
+        raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تحتوي على حرف كبير واحد على الأقل")
+    if not re.search(r"[a-z]", user.password):
+        raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تحتوي على حرف صغير واحد على الأقل")
+    if not re.search(r"\d", user.password):
+        raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تحتوي على رقم واحد على الأقل")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", user.password):
+        raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تحتوي على رمز خاص واحد على الأقل")
+    
     
     # إنشاء المستخدم
     hashed_password = get_password_hash(user.password)
@@ -59,8 +74,13 @@ async def register(user: UserRegister, background_tasks: BackgroundTasks, db: Se
     
     return {"access_token": access_token, "token_type": "bearer"}
 
+from fastapi import Request
+
 @router.post("/login")
-async def login(user: UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, user: UserLogin, db: Session = Depends(get_db)):
+    # Rate limiting handled by decorator
+    
     try:
         db_user = db.query(User).filter(User.email == user.email).first()
         if not db_user:
@@ -125,15 +145,24 @@ async def update_profile(user_update: UserUpdate, token: str = Depends(verify_to
     if user_update.full_name:
         db_user.full_name = user_update.full_name
     
-    if user_update.email:
+    if user_update.email and user_update.email != db_user.email:
+        # Require current password for email change
+        if not user_update.current_password:
+            raise HTTPException(status_code=400, detail="يجب إدخال كلمة المرور الحالية لتغيير البريد الإلكتروني")
+        if not verify_password(user_update.current_password, db_user.hashed_password):
+            raise HTTPException(status_code=400, detail="كلمة المرور الحالية غير صحيحة")
+
         # Check if email is taken by another user
         existing_user = db.query(User).filter(User.email == user_update.email).first()
         if existing_user and existing_user.id != user_id:
             raise HTTPException(status_code=400, detail="البريد الإلكتروني مستخدم بالفعل")
         db_user.email = user_update.email
+        db_user.is_verified = False # Reset verification status if email changes
     
     # Only update password if provided and not empty
-    if user_update.password and len(user_update.password) >= 6:
+    if user_update.password:
+        if len(user_update.password) < 8:
+            raise HTTPException(status_code=400, detail="كلمة المرور يجب أن تكون 8 أحرف على الأقل")
         db_user.hashed_password = get_password_hash(user_update.password)
         
     db.commit()
@@ -162,14 +191,24 @@ async def delete_account(token: str = Depends(verify_token), db: Session = Depen
 @router.post("/forget-password")
 async def forget_password(request: ForgetPasswordRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
+    
+    # SECURITY: Always return success to prevent Email Enumeration
     if not user:
-        # Return success even if email not found to prevent enumeration
-        return {"message": "تم إرسال رابط الاستعادة إذا كان البريد مسجلاً"}
+        return {"message": "إذا كان البريد مسجلاً، سيتم إرسال رابط الاستعادة."}
     
-    token = str(uuid.uuid4())
-    await store_reset_token(user.id, token)
+    # 1. Generate Secure Token (Raw)
+    raw_token = generate_token()
     
-    reset_link = f"http://localhost:3000/auth/reset-password?token={token}"
+    # 2. Hash it for storage
+    token_hash = hash_token(raw_token)
+    
+    # 3. Save Hash + Expiry to DB
+    user.reset_token_hash = token_hash
+    user.reset_token_expires_at = datetime.utcnow() + timedelta(minutes=15)
+    db.commit()
+    
+    # 4. Construct Link with Raw Token
+    reset_link = f"{settings.FRONTEND_URL}/auth/reset-password?token={raw_token}"
     
     email_body = f"""
     <h1>استعادة كلمة المرور</h1>
@@ -183,22 +222,32 @@ async def forget_password(request: ForgetPasswordRequest, background_tasks: Back
     
     background_tasks.add_task(send_email, user.email, "استعادة كلمة المرور - LUMIVST", email_body)
     
-    return {"message": "تم إرسال رابط الاستعادة"}
+    return {"message": "إذا كان البريد مسجلاً، سيتم إرسال رابط الاستعادة."}
 
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
-    user_id = await get_reset_token(request.token)
-    if not user_id:
-        raise HTTPException(status_code=400, detail="توكن غير صالح أو منتهي")
+    # 1. Hash incoming token
+    incoming_token_hash = hash_token(request.token)
     
-    user = db.query(User).filter(User.id == user_id).first()
+    # 2. Find user by Token Hash
+    user = db.query(User).filter(User.reset_token_hash == incoming_token_hash).first()
+    
     if not user:
-        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+        raise HTTPException(status_code=400, detail="الرابط غير صالح أو منتهي")
         
+    # 3. Check Expiry
+    if not user.reset_token_expires_at or user.reset_token_expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="انتهت صلاحية الرابط")
+        
+    # 4. Update Password
     user.hashed_password = get_password_hash(request.password)
+    
+    # 5. SECURITY: Invalidate Token (Single Use)
+    user.reset_token_hash = None
+    user.reset_token_expires_at = None
+    
     db.commit()
     
-    await delete_reset_token(request.token)
     return {"message": "تم تغيير كلمة المرور بنجاح"}
 
 @router.get("/verify-email")

@@ -33,7 +33,7 @@ async def fetch_time_series(
             params = {
                 "symbol": clean_sym,
                 "interval": interval,
-                "apikey": API_KEY,
+                "apikey": settings.API_KEY,
                 "country": country,
                 "outputsize": outputsize,
                 "format": "JSON"

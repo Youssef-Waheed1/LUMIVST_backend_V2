@@ -6,12 +6,17 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # إعدادات JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "tqsdlvy=jtead%x)jmn5@jl%ior3_5am)k%(6=q+myn0!!v%)i")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    # Fallback only for DEV, but warn heavily or fail in prod.
+    # ideally: raise ValueError("SECRET_KEY not set in environment!")
+    print("⚠️ WARNING: SECRET_KEY not set! Using insecure default for DEV only.")
+    SECRET_KEY = "tqsdlvy=jtead%x)jmn5@jl%ior3_5am)k%(6=q+myn0!!v%)i"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days (better usage experience than 1 hour)
 
-# إعدادات Hashing - using pbkdf2_sha256 instead of bcrypt to avoid 72-byte limit
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+# إعدادات Hashing - using argon2 (OWASP recommended)
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # ✅ الاستيراد الصحيح من Redis
 from app.core.redis import redis_cache
@@ -19,11 +24,22 @@ from app.core.redis import redis_cache
 # ✅ مصادقة OAuth2
 security = HTTPBearer()
 
+import secrets
+import hashlib
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+def generate_token() -> str:
+    """Generate a crypgraphically secure random token (32 bytes = 64 hex chars)."""
+    return secrets.token_hex(32)
+
+def hash_token(token: str) -> str:
+    """Hash a token using SHA-256."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
@@ -78,7 +94,7 @@ async def verify_token_exists(user_id: int, token: str) -> bool:
         return True
     except Exception as e:
         print(f"⚠️ Warning: Could not verify token in Redis: {e}")
-        return True  # Fallback to JWT validation only
+        return False  # Fail safe: if Redis is down, assume invalid token
 
 def decode_token(token: str):
     """فك تشفير التوكن والتحقق منه"""
