@@ -4,33 +4,35 @@ from typing import List, Optional
 
 class RSResponse(BaseModel):
     """
-    نموذج استجابة RS لسهم واحد
+    نموذج استجابة RS لسهم واحد - محدث
     """
     symbol: str
     company_name: Optional[str] = None
+    industry_group: Optional[str] = None
     date: date
-    return_3m: Optional[float]
-    return_6m: Optional[float]
-    return_9m: Optional[float]
-    return_12m: Optional[float]
-    rs_raw: Optional[float]
-    rs_percentile: Optional[float]
     
-    # Computed RS per period
-    rs_3m: Optional[int] = None
-    rs_6m: Optional[int] = None
-    rs_9m: Optional[int] = None
-    rs_12m: Optional[int] = None
+    # RS Score
+    rs_rating: Optional[int] = None
+    rs_raw: Optional[float] = None
     
-    rank_position: Optional[int]
-    total_stocks: Optional[int]
+    # Returns
+    return_3m: Optional[float] = None
+    return_6m: Optional[float] = None
+    return_9m: Optional[float] = None
+    return_12m: Optional[float] = None
+    
+    # Ranks (Detailed)
+    rank_3m: Optional[int] = None
+    rank_6m: Optional[int] = None
+    rank_9m: Optional[int] = None
+    rank_12m: Optional[int] = None
     
     class Config:
         from_attributes = True
 
 class RSLatestResponse(BaseModel):
     """
-    نموذج استجابة قائمة RS (للـ Screener أو القائمة الكاملة)
+    نموذج استجابة قائمة RS
     """
     data: List[RSResponse]
     total_count: int
