@@ -79,8 +79,7 @@ from app.core.auth import verify_token
 protected_dependencies = [Depends(verify_token)]
 
 app.include_router(stocks.router, dependencies=protected_dependencies)
-app.include_router(financials.router, dependencie
-s=protected_dependencies)
+app.include_router(financials.router, dependencies=protected_dependencies)
 app.include_router(cache.router, dependencies=protected_dependencies)
 app.include_router(statistics.router, dependencies=protected_dependencies)
 app.include_router(technical_indicators.router, dependencies=protected_dependencies)
