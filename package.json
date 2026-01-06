@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "httpx": "^3.0.1",
-    "sqlalchemy": "^10.1.1"
-  }
-}

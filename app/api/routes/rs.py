@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from typing import List, Optional
@@ -23,31 +23,37 @@ async def get_latest_rs(
     """
     الحصول على آخر RS Rating لكل الأسهم.
     """
-    # 1. معرفة آخر تاريخ متاح
-    latest_date_row = db.query(RSDaily.date).order_by(desc(RSDaily.date)).first()
-    
-    if not latest_date_row:
-        return RSLatestResponse(data=[], total_count=0, date=date.today())
-    
-    latest_date = latest_date_row[0]
-    
-    # 2. بناء الاستعلام
-    query = db.query(RSDaily).filter(RSDaily.date == latest_date)
-    
-    if min_rs is not None:
-        query = query.filter(RSDaily.rs_rating >= min_rs)
-    
-    # الترتيب حسب RS Rating بشكل افتراضي
-    query = query.order_by(desc(RSDaily.rs_rating))
-    
-    # تنفيذ الاستعلام مع الحد الأقصى
-    results = query.limit(limit).all()
-    
-    return RSLatestResponse(
-        data=results,
-        total_count=len(results), # This isn't accurate for pagination but fine for simple limit
-        date=latest_date
-    )
+    try:
+        # 1. معرفة آخر تاريخ متاح
+        latest_date_row = db.query(RSDaily.date).order_by(desc(RSDaily.date)).first()
+        
+        if not latest_date_row:
+            return RSLatestResponse(data=[], total_count=0, date=date.today())
+        
+        latest_date = latest_date_row[0]
+        
+        # 2. بناء الاستعلام
+        query = db.query(RSDaily).filter(RSDaily.date == latest_date)
+        
+        if min_rs is not None:
+            query = query.filter(RSDaily.rs_rating >= min_rs)
+        
+        # الترتيب حسب RS Rating بشكل افتراضي
+        query = query.order_by(desc(RSDaily.rs_rating))
+        
+        # تنفيذ الاستعلام مع الحد الأقصى
+        results = query.limit(limit).all()
+        
+        return RSLatestResponse(
+            data=results,
+            total_count=len(results), # This isn't accurate for pagination but fine for simple limit
+            date=latest_date
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"❌ Error in get_latest_rs: {e}")
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
 @router.get("/{symbol}", response_model=List[RSResponse])
 @limiter.limit("20/minute")
