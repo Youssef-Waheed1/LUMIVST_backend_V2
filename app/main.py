@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs
+from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs, admin
 from app.core.redis import redis_cache
 from app.core.database import create_tables
 from app.services.cache.stock_cache import SAUDI_STOCKS
@@ -68,14 +68,24 @@ async def _calculate_and_save_rs(symbols: list):
         print(f"❌ Error in background RS calculation: {e}")
 
 # Register routers
+# Register routers
 app.include_router(auth.router, prefix="/api", tags=["auth"])
-app.include_router(stocks.router)
-app.include_router(financials.router)
-app.include_router(cache.router)
-app.include_router(statistics.router)
-app.include_router(technical_indicators.router)
-app.include_router(rs.router, prefix="/api")
 app.include_router(contact.router, prefix="/api")
+
+# Protected Routers (Require Authentication)
+from fastapi import Depends
+from app.core.auth import verify_token
+
+protected_dependencies = [Depends(verify_token)]
+
+app.include_router(stocks.router, dependencies=protected_dependencies)
+app.include_router(financials.router, dependencie
+s=protected_dependencies)
+app.include_router(cache.router, dependencies=protected_dependencies)
+app.include_router(statistics.router, dependencies=protected_dependencies)
+app.include_router(technical_indicators.router, dependencies=protected_dependencies)
+app.include_router(rs.router, prefix="/api", dependencies=protected_dependencies)
+app.include_router(admin.router, dependencies=protected_dependencies) # Ensure admin is also double-checked or relies on internal checks
 
 # Event handlers
 @app.on_event("startup")

@@ -1,11 +1,45 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from typing import List
 from app.core.redis import redis_cache
 
 from app.core.database import get_db
 from app.services.cache.stock_cache import stock_cache 
+from app.models.user import User
+from app.schemas.auth import UserResponse
+from app.api.deps import get_current_admin
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+@router.get("/users", response_model=List[UserResponse])
+async def list_users(
+    skip: int = 0, 
+    limit: int = 100, 
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """عرض قائمة المستخدمين (للمدير فقط)"""
+    users = db.query(User).offset(skip).limit(limit).all()
+    return users
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """حذف مستخدم معين (للمدير فقط)"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    
+    # Optional: Prevent deleting self?
+    if user.id == current_admin.id:
+         raise HTTPException(status_code=400, detail="لا يمكنك حذف حسابك الخاص من هنا")
+
+    db.delete(user)
+    db.commit()
+    return {"message": f"تم حذف المستخدم {user.email} بنجاح"}
 
 @router.post("/refresh-data")
 async def refresh_stock_data(page: int = 1, limit: int = 50, db: Session = Depends(get_db)):
