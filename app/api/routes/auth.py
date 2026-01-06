@@ -289,7 +289,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             "grant_type": "authorization_code",
         }
         
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(token_url, data=data)
             token_data = response.json()
             
@@ -300,7 +300,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         id_token = token_data.get("id_token")
         
         # Get user info
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={token_data['access_token']}")
             user_info = response.json()
             
