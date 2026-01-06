@@ -34,7 +34,7 @@ class RSDaily(Base):
     industry_group = Column(String(255))
     
     # Generated column for filtering (Optimized)
-    has_rating = Column(Boolean, server_default=text("rs_rating IS NOT NULL"))
+    has_rating = Column(Boolean, default=False)
     
     # Indexes defined in DB directly via script, but we define them here for SQLAlchemy metadata
     __table_args__ = (

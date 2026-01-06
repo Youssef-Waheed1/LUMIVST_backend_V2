@@ -14,6 +14,8 @@ import app.models.user
 import app.models.contact
 
 config = context.config
+from app.core.config import settings
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 
