@@ -20,8 +20,8 @@ from app.core.database import SessionLocal
 from app.models.price import Price
 # استيراد الخدمات الجديدة
 from app.services.daily_detailed_scraper import scrape_daily_details
-# ✅ بنستخدم الـ Calculator الجديد المبني على الـ Calendar عشان السرعة والدقة
-from scripts.rs_calculator_v3_calendar import calculate_daily_rs
+# ✅ استخدام الـ Calculator النهائي
+from scripts.calculate_rs_final_precise import RSCalculatorFast
 
 # إعداد الـ Logging
 logging.basicConfig(level=logging.INFO)
@@ -146,13 +146,18 @@ def update_daily():
         db.commit()
         logger.info(f"✅ Successfully saved/updated {success_count} price records.")
 
-        # 3. RS Calculation (Optimized V3)
+        # 3. RS Calculation (Optimized Final)
         # -------------------------------------------------------------------
         logger.info("🧮 Starting RS Calculation (Incremental)...")
         
         # Calculate RS just for the target date
-        # Note: We pass the DB URL string, not the session
-        calculate_daily_rs(str(settings.DATABASE_URL), target_date=market_date)
+        calculator = RSCalculatorFast(str(settings.DATABASE_URL))
+        results = calculator.calculate_daily_rs(market_date)
+        
+        # Save results
+        calculator.save_daily_results(results)
+        
+        logger.info(f"✅ Calculated and saved RS for {market_date}")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 
