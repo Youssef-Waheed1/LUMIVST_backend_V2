@@ -15,6 +15,10 @@ class Settings:
         self.API_KEY = os.getenv("TWELVE_DATA_API_KEY")
         self.BASE_URL = "https://api.twelvedata.com"
         
+        # إعدادات إضافية مهمة للإنتاج
+        self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+        self.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
         # ⚠️ تحديث الـ CORS للإنتاج
         allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.lumivst.com,https://lumivst.com")
         if self.DEBUG:
