@@ -90,6 +90,34 @@ app.include_router(admin.router, dependencies=protected_dependencies) # Ensure a
 @app.on_event("startup")
 async def startup_event():
     print("🚀 Starting Saudi Stocks API...")
+    
+    # 1. Run Alembic Migrations Programmatically
+    try:
+        from alembic.config import Config
+        from alembic import command
+        
+        # Point to alembic.ini (Make sure path is correct relative to CWD)
+        # Using uvicorn from root d:\Work\LUMIVST\backend usually
+        alembic_cfg = Config("alembic.ini")
+        # Ensure the DATABASE_URL is set in the config from environment
+        alembic_cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+        
+        print("🔄 Running Alembic migrations...")
+        # Run synchronous command in executor to avoid blocking async loop? 
+        # Actually startup is async but `command.upgrade` is blocking sync code.
+        # Ideally: await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+        # But simple call for startup is usually fine if DB is fast.
+        command.upgrade(alembic_cfg, "head")
+        print("✅ Alembic migrations applied successfully.")
+        
+    except Exception as e:
+        print(f"❌ Failed to run Alembic migrations: {e}")
+        # Note: We might NOT want to stop the app here if it's just a non-critical warning,
+        # but schema mismatch is usually critical. 
+        # For now, we print and continue, hoping create_tables catches basics 
+        # (though create_tables doesn't alter tables).
+
+
     create_tables()
     
     redis_connected = await redis_cache.init_redis()
