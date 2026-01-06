@@ -20,34 +20,53 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Manual changes for users table
-    op.add_column('users', sa.Column('reset_token_hash', sa.String(), nullable=True))
-    op.add_column('users', sa.Column('reset_token_expires_at', sa.DateTime(), nullable=True))
-    op.create_index(op.f('ix_users_reset_token_hash'), 'users', ['reset_token_hash'], unique=False)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    
+    # 1. Update USERS table safely
+    columns_users = [c['name'] for c in inspector.get_columns('users')]
+    
+    if 'reset_token_hash' not in columns_users:
+        op.add_column('users', sa.Column('reset_token_hash', sa.String(), nullable=True))
+        op.create_index(op.f('ix_users_reset_token_hash'), 'users', ['reset_token_hash'], unique=False)
+        
+    if 'reset_token_expires_at' not in columns_users:
+        op.add_column('users', sa.Column('reset_token_expires_at', sa.DateTime(), nullable=True))
 
-    # rs_daily needed additions (excluding dangerous alters)
-    # Checking if columns exist effectively by just adding them. 
-    # If they exist, this might fail, but since previous run failed, they should be gone (rollback).
-    op.add_column('rs_daily', sa.Column('rs_rating', sa.Integer(), nullable=True))
-    op.add_column('rs_daily', sa.Column('rank_3m', sa.Integer(), nullable=True))
-    op.add_column('rs_daily', sa.Column('rank_6m', sa.Integer(), nullable=True))
-    op.add_column('rs_daily', sa.Column('rank_9m', sa.Integer(), nullable=True))
-    op.add_column('rs_daily', sa.Column('rank_12m', sa.Integer(), nullable=True))
-    op.add_column('rs_daily', sa.Column('company_name', sa.String(length=255), nullable=True))
-    op.add_column('rs_daily', sa.Column('industry_group', sa.String(length=255), nullable=True))
+    # 2. Update RS_DAILY table safely
+    columns_rs = [c['name'] for c in inspector.get_columns('rs_daily')]
     
-    # Simple boolean without invalid server_default
-    op.add_column('rs_daily', sa.Column('has_rating', sa.Boolean(), nullable=True, default=False))
+    new_cols = [
+        ('rs_rating', sa.Integer()),
+        ('rank_3m', sa.Integer()),
+        ('rank_6m', sa.Integer()),
+        ('rank_9m', sa.Integer()),
+        ('rank_12m', sa.Integer()),
+        ('company_name', sa.String(length=255)),
+        ('industry_group', sa.String(length=255)),
+        ('has_rating', sa.Boolean())
+    ]
     
-    # We SKIP the alter_column commands that caused Numeric Overflow
-    # op.alter_column('rs_daily', 'rs_raw', ...) 
-
-    # We SKIP other complex alters/drops to be safe for now, 
-    # focusing on adding missing columns for functionality.
+    for col_name, col_type in new_cols:
+        if col_name not in columns_rs:
+            # For has_rating, we want a default
+            if col_name == 'has_rating':
+                op.add_column('rs_daily', sa.Column(col_name, col_type, nullable=True, server_default=sa.text('false')))
+            else:
+                op.add_column('rs_daily', sa.Column(col_name, col_type, nullable=True))
     
-    # indexes
-    op.create_index('idx_rs_daily_date_rating', 'rs_daily', ['date', sa.text('rs_rating DESC')], unique=False)
-    op.create_index('idx_rs_daily_symbol_date', 'rs_daily', ['symbol', 'date'], unique=True)
+    # Indexes (Check by name exception handling is messier, but creating IF NOT EXISTS is standard PG, 
+    # but Alembic op.create_index doesn't support IF NOT EXISTS easily without raw SQL.
+    # We'll wrap in try/except block equivalent or check indexes.)
+    indexes_rs = [i['name'] for i in inspector.get_indexes('rs_daily')]
+    
+    if 'idx_rs_daily_date_rating' not in indexes_rs:
+        op.create_index('idx_rs_daily_date_rating', 'rs_daily', ['date', sa.text('rs_rating DESC')], unique=False)
+        
+    if 'idx_rs_daily_symbol_date' not in indexes_rs:
+        # Note: existing idx_rs_symbol_date might conflict if we are replacing it.
+        # But for now let's just add the one we want if missing.
+        op.create_index('idx_rs_daily_symbol_date', 'rs_daily', ['symbol', 'date'], unique=True)
 
 
 def downgrade() -> None:
