@@ -16,7 +16,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings
-from app.db.session import SessionLocal 
+from app.core.database import SessionLocal 
 from app.models.price import Price
 # استيراد الخدمات الجديدة
 from app.services.daily_detailed_scraper import scrape_daily_details
@@ -152,7 +152,7 @@ def update_daily():
         
         # Calculate RS just for the target date
         # Note: We pass the DB URL string, not the session
-        calculate_daily_rs(str(settings.SQLALCHEMY_DATABASE_URI), target_date=market_date)
+        calculate_daily_rs(str(settings.DATABASE_URL), target_date=market_date)
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 
