@@ -25,9 +25,9 @@ class Settings:
             self.ALLOWED_ORIGINS = ["*"]
         else:
              # Fallback to allow all for troubleshooting if needed, or stick to list
-             self.ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_str.split(",")]
-             # Add specific render domain just in case
-             self.ALLOWED_ORIGINS.extend(["https://lumivst-backend-v2.onrender.com", "https://lumivst.onrender.com"])
+             self.ALLOWED_ORIGINS = ["*"]
+             # self.ALLOWED_ORIGINS = [origin.strip() for origin in allowed_origins_str.split(",")]
+             # self.ALLOWED_ORIGINS.extend(["https://lumivst-backend-v2.onrender.com", "https://lumivst.onrender.com"])
         
         # إعدادات إضافية مهمة للإنتاج
         self.DEBUG = os.getenv("DEBUG", "False").lower() == "true"
