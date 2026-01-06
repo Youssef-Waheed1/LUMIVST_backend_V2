@@ -278,64 +278,70 @@ async def google_login():
 
 @router.post("/google/callback")
 async def google_callback(code: str, db: Session = Depends(get_db)):
-    token_url = "https://oauth2.googleapis.com/token"
-    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/google"
-    data = {
-        "code": code,
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": redirect_uri,
-        "grant_type": "authorization_code",
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(token_url, data=data)
-        token_data = response.json()
-        
-    if "error" in token_data:
-        raise HTTPException(status_code=400, detail=token_data.get("error_description", "Google Login Failed"))
-        
-    id_token = token_data["id_token"]
-    
-    # Get user info
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={token_data['access_token']}")
-        user_info = response.json()
-        
-    email = user_info.get("email")
-    name = user_info.get("name")
-    
-    # Find or create user
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        # Create new user
-        # Generate random password
-        random_password = str(uuid.uuid4())
-        hashed_password = get_password_hash(random_password)
-        user = User(
-            email=email,
-            hashed_password=hashed_password,
-            full_name=name,
-            is_verified=True # Email verified by Google
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        
-    # Create JWT
-    access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
-    await store_token_in_redis(user.id, access_token)
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "is_verified": user.is_verified
+    try:
+        token_url = "https://oauth2.googleapis.com/token"
+        redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/google"
+        data = {
+            "code": code,
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
         }
-    }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(token_url, data=data)
+            token_data = response.json()
+            
+        if "error" in token_data:
+            print(f"Google Token Error: {token_data}")
+            raise HTTPException(status_code=400, detail=token_data.get("error_description", "Google Login Failed"))
+            
+        id_token = token_data.get("id_token")
+        
+        # Get user info
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={token_data['access_token']}")
+            user_info = response.json()
+            
+        email = user_info.get("email")
+        name = user_info.get("name")
+        
+        # Find or create user
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            # Create new user
+            # Generate random password
+            random_password = str(uuid.uuid4())
+            hashed_password = get_password_hash(random_password)
+            user = User(
+                email=email,
+                hashed_password=hashed_password,
+                full_name=name,
+                is_verified=True # Email verified by Google
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            
+        # Create JWT
+        access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+        await store_token_in_redis(user.id, access_token)
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "is_verified": user.is_verified
+            }
+        }
+    except Exception as e:
+        traceback.print_exc()
+        print(f"❌ Google Callback Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Google Login Error: {str(e)}")
 
 # Social Login - Facebook
 @router.get("/facebook/login")
