@@ -41,14 +41,20 @@ async def register(user: UserRegister, background_tasks: BackgroundTasks, db: Se
         email=user.email, 
         hashed_password=hashed_password, 
         full_name=user.full_name,
-        is_verified=False # Ensure user is not verified initially
+        is_verified=False, # Ensure user is not verified initially
+        is_approved=False  # Must be approved by admin
     )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     
     # إنشاء وتخزين التوكن
-    access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
+    access_token = create_access_token(data={
+        "sub": str(db_user.id), 
+        "email": db_user.email,
+        "is_approved": db_user.is_approved,
+        "is_admin": db_user.is_admin
+    })
     try:
         await store_token_in_redis(db_user.id, access_token)
     except Exception as e:
@@ -74,6 +80,46 @@ async def register(user: UserRegister, background_tasks: BackgroundTasks, db: Se
     
     return {"access_token": access_token, "token_type": "bearer"}
 
+@router.post("/refresh-token")
+async def refresh_token(token: str = Depends(verify_token), db: Session = Depends(get_db)):
+    """
+    Issue a new token with updated claims from the database.
+    Useful when user's approval status changes and they need updated token.
+    """
+    payload = decode_token(token)
+    user_id = int(payload.get("sub"))
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create new token with FRESH data from DB
+    new_token = create_access_token(data={
+        "sub": str(user.id),
+        "email": user.email,
+        "is_approved": user.is_approved,
+        "is_admin": user.is_admin
+    })
+    
+    # Store new token in Redis
+    try:
+        await store_token_in_redis(user.id, new_token)
+    except Exception as e:
+        print(f"⚠️ Redis error during token refresh: {e}")
+    
+    return {
+        "access_token": new_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_verified": user.is_verified,
+            "is_approved": user.is_approved,
+            "is_admin": user.is_admin
+        }
+    }
+
 from fastapi import Request
 
 @router.post("/login")
@@ -85,11 +131,28 @@ async def login(request: Request, user: UserLogin, db: Session = Depends(get_db)
         db_user = db.query(User).filter(User.email == user.email).first()
         if not db_user:
             raise HTTPException(status_code=404, detail="الحساب غير موجود")
+            
+        # Check Account Lockout (Optional Implementation)
+        if db_user.is_locked:
+             raise HTTPException(status_code=403, detail="تم قفل الحساب. يرجى الاتصال بالدعم.")
         
         if not verify_password(user.password, db_user.hashed_password):
+            # Increment failed attempts logic could go here
             raise HTTPException(status_code=401, detail="كلمة المرور غير صحيحة")
+            
+        # ✅ Check Approval Status
+        if not db_user.is_approved:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+            )
         
-        access_token = create_access_token(data={"sub": str(db_user.id), "email": db_user.email})
+        access_token = create_access_token(data={
+            "sub": str(db_user.id), 
+            "email": db_user.email,
+            "is_approved": db_user.is_approved,
+            "is_admin": db_user.is_admin
+        })
         
         # Store token in Redis (safely)
         try:
@@ -105,7 +168,9 @@ async def login(request: Request, user: UserLogin, db: Session = Depends(get_db)
                 "id": db_user.id,
                 "email": db_user.email,
                 "full_name": db_user.full_name,
-                "is_verified": db_user.is_verified
+                "is_verified": db_user.is_verified,
+                "is_approved": db_user.is_approved,
+                "is_admin": db_user.is_admin
             }
         }
     except HTTPException:
@@ -318,14 +383,20 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                 email=email,
                 hashed_password=hashed_password,
                 full_name=name,
-                is_verified=True # Email verified by Google
+                is_verified=True, # Email verified by Google
+                is_approved=False # Must be approved
             )
             db.add(user)
             db.commit()
             db.refresh(user)
             
         # Create JWT
-        access_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+        access_token = create_access_token(data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "is_approved": user.is_approved,
+            "is_admin": user.is_admin
+        })
         await store_token_in_redis(user.id, access_token)
         
         return {
@@ -335,7 +406,9 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
-                "is_verified": user.is_verified
+                "is_verified": user.is_verified,
+                "is_approved": user.is_approved,
+                "is_admin": user.is_admin
             }
         }
     except Exception as e:
@@ -392,14 +465,20 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
             email=email,
             hashed_password=hashed_password,
             full_name=name,
-            is_verified=True  # Email verified by Facebook
+            is_verified=True,  # Email verified by Facebook
+            is_approved=False  # Must be approved
         )
         db.add(user)
         db.commit()
         db.refresh(user)
         
     # Create JWT
-    jwt_token = create_access_token(data={"sub": str(user.id), "email": user.email})
+    jwt_token = create_access_token(data={
+        "sub": str(user.id), 
+        "email": user.email,
+        "is_approved": user.is_approved,
+        "is_admin": user.is_admin
+    })
     await store_token_in_redis(user.id, jwt_token)
     
     return {
@@ -409,6 +488,8 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
             "id": user.id,
             "email": user.email,
             "full_name": user.full_name,
-            "is_verified": user.is_verified
+            "is_verified": user.is_verified,
+            "is_approved": user.is_approved,
+            "is_admin": user.is_admin
         }
     }

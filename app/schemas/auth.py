@@ -29,6 +29,8 @@ class UserResponse(BaseModel):
     full_name: str
     
     is_verified: bool
+    is_approved: bool = False
+    is_admin: bool = False
     
     class Config:
         from_attributes = True

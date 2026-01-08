@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
-from app.core.redis import redis_cache
+from datetime import datetime
 
 from app.core.database import get_db
 from app.services.cache.stock_cache import stock_cache 
 from app.models.user import User
 from app.schemas.auth import UserResponse
 from app.api.deps import get_current_admin
+from app.core.redis import redis_cache
+from app.core.limiter import limiter
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -15,15 +17,60 @@ router = APIRouter(prefix="/admin", tags=["Admin"])
 async def list_users(
     skip: int = 0, 
     limit: int = 100, 
+    approved: bool = None,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
     """عرض قائمة المستخدمين (للمدير فقط)"""
-    users = db.query(User).offset(skip).limit(limit).all()
+    query = db.query(User)
+    
+    if approved is not None:
+        query = query.filter(User.is_approved == approved)
+        
+    users = query.offset(skip).limit(limit).all()
     return users
 
+@router.get("/pending-users", response_model=List[UserResponse])
+async def get_pending_users(
+    skip: int = 0,
+    limit: int = 100,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """عرض المستخدمين المنتظرين للموافقة"""
+    users = db.query(User).filter(User.is_approved == False).offset(skip).limit(limit).all()
+    return users
+
+@router.post("/approve-user/{user_id}")
+@limiter.limit("10/minute")  # Rate limit: 10 approvals per minute
+async def approve_user(
+    request: Request,
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """موافقة المدير على مستخدم"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.is_approved:
+        return {"message": "User is already approved"}
+    
+    user.is_approved = True
+    user.approved_at = datetime.utcnow()
+    user.approved_by = current_admin.id
+    
+    db.commit()
+    
+    # Send email notification could go here
+    
+    return {"message": f"User {user.email} approved successfully"}
+
 @router.delete("/users/{user_id}")
+@limiter.limit("5/minute")  # Rate limit: 5 deletions per minute
 async def delete_user(
+    request: Request,
     user_id: int,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
@@ -39,10 +86,16 @@ async def delete_user(
 
     db.delete(user)
     db.commit()
+    
+    # Invalidate token
+    from app.core.auth import invalidate_token
+    await invalidate_token(user_id)
+    
     return {"message": f"تم حذف المستخدم {user.email} بنجاح"}
 
 @router.post("/refresh-data")
-async def refresh_stock_data(page: int = 1, limit: int = 50, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")  # Rate limit: 3 refreshes per minute (expensive operation)
+async def refresh_stock_data(request: Request, page: int = 1, limit: int = 50, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
     """إجبار النظام على تحديث البيانات من API"""
     try:
         # مسح الكاش أولاً
@@ -65,7 +118,7 @@ async def refresh_stock_data(page: int = 1, limit: int = 50, db: Session = Depen
         raise HTTPException(status_code=500, detail=f"❌ خطأ في تحديث البيانات: {str(e)}")
 
 @router.get("/stats")
-async def get_system_stats(db: Session = Depends(get_db)):
+async def get_system_stats(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
     """إحصائيات النظام"""
     try:
         # جلب إحصائيات من الـ cache
@@ -87,7 +140,8 @@ async def get_system_stats(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"❌ خطأ في جلب إحصائيات النظام: {str(e)}")
 
 @router.post("/force-api-refresh/{symbol}")
-async def force_api_refresh(symbol: str):
+@limiter.limit("10/minute")  # Rate limit: 10 symbol refreshes per minute
+async def force_api_refresh(request: Request, symbol: str, current_admin: User = Depends(get_current_admin)):
     """إجبار تحديث بيانات سهم معين من API"""
     try:
         # مسح كاش السهم المحدد

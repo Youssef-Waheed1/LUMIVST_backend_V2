@@ -8,7 +8,7 @@ load_dotenv()
 class Settings:
     def __init__(self):
         # ⚠️ إزالة القيم الافتراضية المحلية في الإنتاج
-        self.DATABASE_URL = os.getenv("DATABASE_URL")
+        self.DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://youssef:UtnuCIs7PL3879r7R4jjIHi5FBqoHpKy@dpg-d4k8djidbo4c73cqncl0-a.oregon-postgres.render.com/financialdb_bvyn")
         self.REDIS_URL = os.getenv("REDIS_URL")
         self.CACHE_EXPIRE_SECONDS = int(os.getenv("CACHE_EXPIRE_SECONDS", "300"))
         self.STOCK_PRICE_CACHE_SECONDS = int(os.getenv("STOCK_PRICE_CACHE_SECONDS", "300"))
@@ -20,7 +20,7 @@ class Settings:
         self.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
         # ⚠️ تحديث الـ CORS للإنتاج
-        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.lumivst.com,https://lumivst.com")
+        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.zakhm.ai,https://zakhm.ai")
         if self.DEBUG:
             self.ALLOWED_ORIGINS = ["*"]
         else:
@@ -38,7 +38,7 @@ class Settings:
         self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
         self.SMTP_USER = os.getenv("SMTP_USER", "")
         self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-        self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@lumivst.com")
+        self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@zakhm.ai")
 
         # Social Login
         self.GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

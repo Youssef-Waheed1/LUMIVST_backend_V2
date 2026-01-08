@@ -84,7 +84,7 @@ app.include_router(cache.router, dependencies=protected_dependencies)
 app.include_router(statistics.router, dependencies=protected_dependencies)
 app.include_router(technical_indicators.router, dependencies=protected_dependencies)
 app.include_router(rs.router, prefix="/api", dependencies=protected_dependencies)
-app.include_router(admin.router, dependencies=protected_dependencies) # Ensure admin is also double-checked or relies on internal checks
+app.include_router(admin.router, prefix="/api", dependencies=protected_dependencies) # /api/admin/*
 
 # Event handlers
 @app.on_event("startup")

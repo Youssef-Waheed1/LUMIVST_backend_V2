@@ -15,6 +15,12 @@ def get_current_user(token: str = Depends(verify_token), db: Session = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Account pending admin approval"
+        )
+    
     return user
 
 def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
