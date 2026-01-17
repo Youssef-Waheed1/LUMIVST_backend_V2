@@ -25,6 +25,7 @@ from app.models.profile import CompanyProfile
 from app.models.quote import StockQuote
 from app.models.price import Price
 from app.models.rs_daily import RSDaily
+from app.models.official_filings import CompanyOfficialFiling
 
 def create_tables():
     """إنشاء الجداول"""

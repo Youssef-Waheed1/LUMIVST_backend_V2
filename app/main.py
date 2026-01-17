@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs, admin
+from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs, admin, scraper, official_filings
 from app.core.redis import redis_cache
 from app.core.database import create_tables
 from app.services.cache.stock_cache import SAUDI_STOCKS
@@ -85,6 +85,8 @@ app.include_router(statistics.router, dependencies=protected_dependencies)
 app.include_router(technical_indicators.router, dependencies=protected_dependencies)
 app.include_router(rs.router, prefix="/api", dependencies=protected_dependencies)
 app.include_router(admin.router, prefix="/api", dependencies=protected_dependencies) # /api/admin/*
+app.include_router(scraper.router)  # /api/scraper/*
+app.include_router(official_filings.router, prefix="/api") # /api/ingest/official-reports & /api/reports/{symbol}
 
 # Event handlers
 @app.on_event("startup")

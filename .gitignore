@@ -11,3 +11,10 @@ quick_update_admin.py
 create_admin.py
 TEST_RESULTS.md
 HOW_TO_UPDATE_ADMIN.md
+
+data/downloads/
+storage/excel_reports/
+scraped_data/
+*.pdf
+*.xlsx
+*.xls

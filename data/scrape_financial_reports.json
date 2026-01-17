@@ -1,0 +1,490 @@
+{
+    "Financial Statements": [
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Annual",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2025-03-23_15-38-19_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_Financial_Statements_Annual.pdf",
+            "file_type": "pdf",
+            "period": "Annual",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2024-03-23_10-33-10_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_Financial_Statements_Annual.pdf",
+            "file_type": "pdf",
+            "period": "Annual",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2023-03-23_13-54-21_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_Financial_Statements_Annual.pdf",
+            "file_type": "pdf",
+            "period": "Annual",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2022-03-30_16-23-59_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_Financial_Statements_Annual.pdf",
+            "file_type": "pdf",
+            "period": "Annual",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2024",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2023",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2022",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2021",
+            "published_date": "-"
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2025-11-13_14-50-49_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_Financial_Statements_Q3.pdf",
+            "file_type": "pdf",
+            "period": "Q3",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2024-11-11_10-43-58_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_Financial_Statements_Q3.pdf",
+            "file_type": "pdf",
+            "period": "Q3",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2023-11-09_08-31-39_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_Financial_Statements_Q3.pdf",
+            "file_type": "pdf",
+            "period": "Q3",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2022-11-10_09-42-37_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_Financial_Statements_Q3.pdf",
+            "file_type": "pdf",
+            "period": "Q3",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2021-11-11_09-10-33_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_Financial_Statements_Q3.pdf",
+            "file_type": "pdf",
+            "period": "Q3",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2025-08-03_17-09-19_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_Financial_Statements_Q2.pdf",
+            "file_type": "pdf",
+            "period": "Q2",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2024-08-06_10-58-06_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_Financial_Statements_Q2.pdf",
+            "file_type": "pdf",
+            "period": "Q2",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2023-08-20_10-51-33_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_Financial_Statements_Q2.pdf",
+            "file_type": "pdf",
+            "period": "Q2",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2022-08-29_10-52-15_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_Financial_Statements_Q2.pdf",
+            "file_type": "pdf",
+            "period": "Q2",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2021-08-22_09-31-54_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_Financial_Statements_Q2.pdf",
+            "file_type": "pdf",
+            "period": "Q2",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2025-05-06_12-44-53_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_Financial_Statements_Q1.pdf",
+            "file_type": "pdf",
+            "period": "Q1",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2024-05-21_15-22-57_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_Financial_Statements_Q1.pdf",
+            "file_type": "pdf",
+            "period": "Q1",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2023-05-25_09-15-17_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_Financial_Statements_Q1.pdf",
+            "file_type": "pdf",
+            "period": "Q1",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2022-05-19_15-44-03_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_Financial_Statements_Q1.pdf",
+            "file_type": "pdf",
+            "period": "Q1",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2021-05-26_08-51-08_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_Financial_Statements_Q1.pdf",
+            "file_type": "pdf",
+            "period": "Q1",
+            "year": "2021",
+            "published_date": ""
+        }
+    ],
+    "XBRL": [
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Annual",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2025-03-26_14-37-36_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_XBRL_Annual.xlsx",
+            "file_type": "excel",
+            "period": "Annual",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2024-03-25_12-00-47_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_XBRL_Annual.xlsx",
+            "file_type": "excel",
+            "period": "Annual",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2023-03-28_13-54-47_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_XBRL_Annual.xlsx",
+            "file_type": "excel",
+            "period": "Annual",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2022-04-03_15-18-40_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_XBRL_Annual.xlsx",
+            "file_type": "excel",
+            "period": "Annual",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2024",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2023",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2022",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Q4",
+            "year": "2021",
+            "published_date": "-"
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2025-11-13_16-05-39_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_XBRL_Q3.xlsx",
+            "file_type": "excel",
+            "period": "Q3",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2024-11-14_10-49-15_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_XBRL_Q3.xlsx",
+            "file_type": "excel",
+            "period": "Q3",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2023-11-09_11-39-53_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_XBRL_Q3.xlsx",
+            "file_type": "excel",
+            "period": "Q3",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2022-11-16_13-00-39_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_XBRL_Q3.xlsx",
+            "file_type": "excel",
+            "period": "Q3",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2021-11-11_10-54-24_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_XBRL_Q3.xlsx",
+            "file_type": "excel",
+            "period": "Q3",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2025-08-06_13-29-11_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_XBRL_Q2.xlsx",
+            "file_type": "excel",
+            "period": "Q2",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2024-08-13_17-18-47_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_XBRL_Q2.xlsx",
+            "file_type": "excel",
+            "period": "Q2",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2023-08-20_13-37-32_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_XBRL_Q2.xlsx",
+            "file_type": "excel",
+            "period": "Q2",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2022-09-14_16-20-12_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_XBRL_Q2.xlsx",
+            "file_type": "excel",
+            "period": "Q2",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2021-08-17_12-42-27_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_XBRL_Q2.xlsx",
+            "file_type": "excel",
+            "period": "Q2",
+            "year": "2021",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2025-05-07_11-17-50_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2025_XBRL_Q1.xlsx",
+            "file_type": "excel",
+            "period": "Q1",
+            "year": "2025",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2024-05-26_10-22-31_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_XBRL_Q1.xlsx",
+            "file_type": "excel",
+            "period": "Q1",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2023-05-23_18-14-33_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_XBRL_Q1.xlsx",
+            "file_type": "excel",
+            "period": "Q1",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2022-05-22_16-17-10_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_XBRL_Q1.xlsx",
+            "file_type": "excel",
+            "period": "Q1",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/XBRL_DOCS/465_4300_2021-05-26_17-38-27_Eng.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_XBRL_Q1.xlsx",
+            "file_type": "excel",
+            "period": "Q1",
+            "year": "2021",
+            "published_date": ""
+        }
+    ],
+    "Board Report": [
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "Board Report",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2025-03-25_12-29-02_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2024_Board_Report_Board_Report.pdf",
+            "file_type": "pdf",
+            "period": "Board Report",
+            "year": "2024",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2024-03-30_10-49-42_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2023_Board_Report_Board_Report.pdf",
+            "file_type": "pdf",
+            "period": "Board Report",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2023-03-29_18-40-09_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2022_Board_Report_Board_Report.pdf",
+            "file_type": "pdf",
+            "period": "Board Report",
+            "year": "2022",
+            "published_date": ""
+        },
+        {
+            "url": "https://www.saudiexchange.sa/Resources/fsPdf/465_0_2022-03-31_15-27-46_En.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\4300\\2021_Board_Report_Board_Report.pdf",
+            "file_type": "pdf",
+            "period": "Board Report",
+            "year": "2021",
+            "published_date": ""
+        }
+    ],
+    "ESG Report": [
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "ESG Report",
+            "year": "2025",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "ESG Report",
+            "year": "2024",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "ESG Report",
+            "year": "2023",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "ESG Report",
+            "year": "2022",
+            "published_date": "-"
+        },
+        {
+            "url": null,
+            "local_path": null,
+            "file_type": "none",
+            "period": "ESG Report",
+            "year": "2021",
+            "published_date": "-"
+        }
+    ]
+}

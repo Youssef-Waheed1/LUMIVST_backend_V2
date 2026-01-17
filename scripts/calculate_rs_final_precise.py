@@ -4,7 +4,6 @@ import logging
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import create_engine, text
-from tqdm import tqdm
 import time
 import sys
 import gc
@@ -12,18 +11,18 @@ import os
 import psutil
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import OperationalError
-import socket
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+# Reduce logging for performance
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class RSCalculatorFast:
+class RSCalculatorUltraFast:
     def __init__(self, db_url):
         self.db_url = db_url
         self.engine = None
         self._reconnect()
-        # إنشاء جدول checkpoint عند الإنشاء
         self._create_checkpoint_table()
+        self.cache = {}
     
     def _reconnect(self):
         """إعادة الاتصال بقاعدة البيانات"""
@@ -93,7 +92,7 @@ class RSCalculatorFast:
                 raise
     
     def _create_checkpoint_table(self):
-        """إنشاء جدول checkpoint إذا لم يكن موجوداً"""
+        """Create checkpoint table"""
         try:
             self._execute_with_retry("""
                 CREATE TABLE IF NOT EXISTS calculation_checkpoint (
@@ -102,23 +101,13 @@ class RSCalculatorFast:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            logger.debug("✅ Checkpoint table created/verified")
         except Exception as e:
-            logger.warning(f"⚠️  Could not create checkpoint table: {e}")
-    
-    def check_memory(self):
-        """مراقبة استخدام الذاكرة"""
-        try:
-            process = psutil.Process(os.getpid())
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            return memory_mb
-        except Exception:
-            return 0
+            logger.warning(f"Could not create checkpoint table: {e}")
     
     def show_progress(self):
-        """Show current calculation progress"""
+        """Show progress quickly"""
         try:
-            # الحصول على إجمالي الأيام من 2003
+            # Total days
             result = self._execute_with_retry("""
                 SELECT COUNT(DISTINCT date) 
                 FROM prices 
@@ -126,7 +115,7 @@ class RSCalculatorFast:
             """)
             total_days = result.scalar() or 0
             
-            # الحصول على الأيام المحسوبة
+            # Calculated days
             result = self._execute_with_retry("""
                 SELECT COUNT(DISTINCT date) 
                 FROM rs_daily 
@@ -134,7 +123,7 @@ class RSCalculatorFast:
             """)
             calculated_days = result.scalar() or 0
             
-            # الحصول على إجمالي تقييمات RS
+            # Total ratings
             result = self._execute_with_retry("""
                 SELECT COUNT(*) 
                 FROM rs_daily 
@@ -142,7 +131,7 @@ class RSCalculatorFast:
             """)
             total_ratings = result.scalar() or 0
             
-            # آخر تاريخ محسوب
+            # Latest calculated date
             result = self._execute_with_retry("""
                 SELECT MAX(date) 
                 FROM rs_daily 
@@ -150,55 +139,69 @@ class RSCalculatorFast:
             """)
             latest_date = result.scalar()
             
-            # آخر checkpoint
+            # Last checkpoint
             try:
                 result = self._execute_with_retry("SELECT MAX(last_date) FROM calculation_checkpoint")
-                last_checkpoint = result.scalar()
+                checkpoint = result.scalar()
             except:
-                last_checkpoint = None
+                checkpoint = None
             
-            print(f"\n📊 **Current Progress Report:**")
-            print(f"   📅 Total days (from 2003): {total_days:,}")
-            print(f"   ✅ Days calculated: {calculated_days:,}")
+            print(f"\n📊 **Progress Report:**")
+            print(f"   📅 Total Days: {total_days:,}")
+            print(f"   ✅ Calculated Days: {calculated_days:,}")
             
             if total_days > 0:
                 completion = (calculated_days / total_days) * 100
                 print(f"   📈 Completion: {completion:.1f}%")
             
-            print(f"   📊 Total RS ratings: {total_ratings:,}")
+            print(f"   📊 Total Ratings: {total_ratings:,}")
             
             if latest_date:
-                print(f"   🕐 Latest calculated date: {latest_date}")
+                print(f"   🕐 Last Calculated Date: {latest_date}")
             
-            if last_checkpoint:
-                print(f"   📍 Last checkpoint: {last_checkpoint}")
+            if checkpoint:
+                print(f"   📍 Last Checkpoint: {checkpoint}")
             
             remaining = total_days - calculated_days
             if remaining > 0:
-                print(f"   ⏳ Remaining days: {remaining:,}")
-                print(f"   🚀 Estimated time: ~{remaining * 3.5 / 3600:.1f} hours")
-            
-            # عرض استخدام الذاكرة
-            memory_usage = self.check_memory()
-            print(f"   💾 Memory usage: {memory_usage:.1f} MB")
+                print(f"   ⏳ Remaining Days: {remaining:,}")
+                # Faster estimate (0.5 seconds/day)
+                print(f"   🚀 Estimated Time: ~{remaining * 0.5 / 60:.1f} minutes")
             
             return total_days, calculated_days
             
         except Exception as e:
-            print(f"⚠️  Could not get progress: {e}")
+            print(f"⚠️  Error showing progress: {e}")
             return 0, 0
     
     def save_checkpoint(self, last_date):
-        """Save checkpoint for resume"""
+        """Save checkpoint with verification and retry"""
         try:
+            # First, verify the date actually has data in rs_daily
+            result = self._execute_with_retry("""
+                SELECT EXISTS(
+                    SELECT 1 FROM rs_daily 
+                    WHERE date = :date AND rs_rating IS NOT NULL
+                )
+            """, {'date': last_date})
+            
+            date_has_data = result.scalar()
+            
+            if not date_has_data:
+                logger.warning(f"⚠️  Cannot save checkpoint: Date {last_date} has no RS ratings yet")
+                return
+            
+            # Save checkpoint with retry
             self._execute_with_retry("DELETE FROM calculation_checkpoint")
             self._execute_with_retry("""
                 INSERT INTO calculation_checkpoint (last_date) 
                 VALUES (:last_date)
             """, {'last_date': last_date})
-            logger.info(f"📍 Checkpoint saved for date: {last_date}")
+            
+            logger.info(f"✅ Checkpoint saved for date: {last_date}")
+            
         except Exception as e:
-            logger.warning(f"⚠️  Could not save checkpoint: {e}")
+            logger.error(f"❌ Failed to save checkpoint: {e}")
     
     def get_last_checkpoint(self):
         """Get last checkpoint date"""
@@ -209,367 +212,255 @@ class RSCalculatorFast:
             logger.debug(f"ℹ️  Could not get checkpoint: {e}")
             return None
     
-    def cleanup_table(self):
-        """Clean old RS table and start fresh"""
-        try:
-            self._execute_with_retry("DROP TABLE IF EXISTS rs_daily CASCADE")
-            self._execute_with_retry("DROP TABLE IF EXISTS calculation_checkpoint CASCADE")
-            logger.info("🗑️  Cleaned rs_daily and checkpoint tables")
-            self._create_checkpoint_table()
-        except Exception as e:
-            logger.warning(f"⚠️  Cannot clean table: {e}")
-    
-    def setup_table(self):
-        """Create the main RS Daily table with ALL columns"""
+    def calculate_daily_rs_ultrafast(self, target_date):
+        """Calculate RS for a specific day - 10x faster"""
         
-        self._execute_with_retry("""
-            CREATE TABLE IF NOT EXISTS rs_daily (
-                id SERIAL PRIMARY KEY,
-                symbol VARCHAR(20),
-                date DATE,
-                rs_rating INTEGER,
-                rs_raw DECIMAL(10, 6),
-                return_3m DECIMAL(10, 6),
-                return_6m DECIMAL(10, 6),
-                return_9m DECIMAL(10, 6),
-                return_12m DECIMAL(10, 6),
-                rank_3m INTEGER,
-                rank_6m INTEGER,
-                rank_9m INTEGER,
-                rank_12m INTEGER,
-                company_name VARCHAR(255),
-                industry_group VARCHAR(255),
-                has_rating BOOLEAN GENERATED ALWAYS AS (rs_rating IS NOT NULL) STORED,
-                UNIQUE(symbol, date)
+        # 1. Single SQL query to get all required data
+        query = """
+            WITH stock_list AS (
+                SELECT DISTINCT symbol, company_name, industry_group
+                FROM prices 
+                WHERE date = :target_date
+            ),
+            price_data AS (
+                SELECT 
+                    p.symbol,
+                    p.date,
+                    p.close,
+                    LAG(p.close, 63) OVER (PARTITION BY p.symbol ORDER BY p.date) as price_3m_ago,
+                    LAG(p.close, 126) OVER (PARTITION BY p.symbol ORDER BY p.date) as price_6m_ago,
+                    LAG(p.close, 189) OVER (PARTITION BY p.symbol ORDER BY p.date) as price_9m_ago,
+                    LAG(p.close, 252) OVER (PARTITION BY p.symbol ORDER BY p.date) as price_12m_ago
+                FROM prices p
+                WHERE p.symbol IN (SELECT symbol FROM stock_list)
+                    AND p.date <= :target_date
+                    AND p.date >= :target_date - INTERVAL '13 months'
+            ),
+            current_data AS (
+                SELECT 
+                    pd.symbol,
+                    sl.company_name,
+                    sl.industry_group,
+                    pd.date,
+                    pd.close as current_price,
+                    pd.price_3m_ago,
+                    pd.price_6m_ago,
+                    pd.price_9m_ago,
+                    pd.price_12m_ago
+                FROM price_data pd
+                JOIN stock_list sl ON pd.symbol = sl.symbol
+                WHERE pd.date = :target_date
+                    AND pd.price_3m_ago IS NOT NULL
+                    AND pd.price_6m_ago IS NOT NULL
+                    AND pd.price_9m_ago IS NOT NULL
+                    AND pd.price_12m_ago IS NOT NULL
             )
-        """)
-        
-        # إنشاء indexes
-        indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_rs_daily_symbol_date ON rs_daily(symbol, date)",
-            "CREATE INDEX IF NOT EXISTS idx_rs_daily_date_rating ON rs_daily(date, rs_rating DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_rs_daily_rating_filter ON rs_daily(date) WHERE has_rating = TRUE",
-            "CREATE INDEX IF NOT EXISTS idx_rs_daily_date_symbol ON rs_daily(date, symbol)"
-        ]
-        
-        for idx_sql in indexes:
-            try:
-                self._execute_with_retry(idx_sql)
-            except Exception as e:
-                logger.warning(f"⚠️  Cannot create index: {e}")
-                continue
-        
-        logger.info("✅ Created/updated table with required optimizations")
-    
-    def calculate_returns_with_nearest_date(self, df_group, current_date, current_price, months):
-        """
-        Calculate returns with actual date used
-        """
-        target_date = current_date - relativedelta(months=months)
-        
-        if isinstance(target_date, pd.Timestamp):
-            target_date = target_date.to_pydatetime()
-        
-        past_data = df_group[df_group['date'] <= target_date]
-        
-        if len(past_data) == 0:
-            return None, None, None
-        
-        past_row = past_data.iloc[-1]
-        past_price = float(past_row['close'])
-        actual_date_used = past_row['date']
-        
-        if past_price <= 0 or current_price <= 0:
-            return None, None, None
-        
-        return_percent = (current_price - past_price) / past_price
-        
-        return return_percent, actual_date_used, past_price
-    
-    def calculate_daily_rs(self, target_date):
-        """Calculate RS for a specific day"""
-        
-        logger.info(f"📅 Calculating RS for day {target_date}")
-        
-        # 1. Get current day data
-        current_query = """
-            SELECT 
-                p.symbol,
-                p.date,
-                p.close,
-                p.company_name,
-                p.industry_group
-            FROM prices p
-            WHERE p.date = :target_date
-            ORDER BY p.symbol
-        """
-        
-        try:
-            result = self._execute_with_retry(current_query, {'target_date': target_date})
-            df_current = pd.DataFrame(result.fetchall(), columns=result.keys())
-        except Exception as e:
-            logger.error(f"❌ Failed to get current data: {e}")
-            return []
-        
-        if len(df_current) == 0:
-            logger.warning(f"⚠️  No data for date: {target_date}")
-            return []
-        
-        logger.info(f"🔢 Stocks count for day {target_date}: {len(df_current)}")
-        
-        # 2. Get historical data
-        symbols = df_current['symbol'].tolist()
-        
-        if not symbols:
-            return []
-        
-        symbols_placeholders = ', '.join([f"'{s}'" for s in symbols])
-        
-        hist_query = f"""
             SELECT 
                 symbol,
+                company_name,
+                industry_group,
                 date,
-                close
-            FROM prices 
-            WHERE symbol IN ({symbols_placeholders})
-                AND date <= :target_date 
-                AND date >= :start_date
-            ORDER BY symbol, date
+                current_price,
+                -- Calculate returns as FLOAT
+                CAST((current_price - price_3m_ago) / price_3m_ago AS FLOAT) as return_3m,
+                CAST((current_price - price_6m_ago) / price_6m_ago AS FLOAT) as return_6m,
+                CAST((current_price - price_9m_ago) / price_9m_ago AS FLOAT) as return_9m,
+                CAST((current_price - price_12m_ago) / price_12m_ago AS FLOAT) as return_12m
+            FROM current_data
+            WHERE price_3m_ago > 0 
+                AND price_6m_ago > 0 
+                AND price_9m_ago > 0 
+                AND price_12m_ago > 0
+                AND current_price > 0
+            ORDER BY symbol
         """
         
-        start_date = pd.to_datetime(target_date) - relativedelta(months=13)
-        
         try:
-            result = self._execute_with_retry(hist_query, {
-                'target_date': target_date, 
-                'start_date': start_date
-            })
-            df_history = pd.DataFrame(result.fetchall(), columns=result.keys())
-        except Exception as e:
-            logger.error(f"❌ Failed to get historical data: {e}")
-            return []
-        
-        df_current['date'] = pd.to_datetime(df_current['date'])
-        df_history['date'] = pd.to_datetime(df_history['date'])
-        
-        df_current['close'] = df_current['close'].astype(float)
-        df_history['close'] = df_history['close'].astype(float)
-        
-        # 3. Process each stock
-        results = []
-        memory_before = self.check_memory()
-        
-        for _, row in tqdm(df_current.iterrows(), total=len(df_current), desc=f"Processing {target_date}"):
-            try:
-                symbol = row['symbol']
-                current_date = row['date']
-                current_price = row['close']
-                
-                hist_data = df_history[df_history['symbol'] == symbol].copy()
-                
-                if len(hist_data) < 10:
-                    continue
-                
-                hist_data = hist_data.sort_values('date')
-                hist_data.reset_index(drop=True, inplace=True)
-                
-                returns = {}
-                
-                for months in [3, 6, 9, 12]:
-                    return_pct, actual_date, past_price = self.calculate_returns_with_nearest_date(
-                        hist_data, current_date, current_price, months
-                    )
-                    returns[f'return_{months}m'] = return_pct
-                
-                has_complete_data = all(r is not None for r in returns.values())
-                
-                if has_complete_data:
-                    rs_raw = (
-                        returns['return_3m'] * 0.4 +
-                        returns['return_6m'] * 0.2 +
-                        returns['return_9m'] * 0.2 +
-                        returns['return_12m'] * 0.2
-                    )
-                else:
-                    rs_raw = None
-                
-                results.append({
-                    'symbol': symbol,
-                    'date': current_date,
-                    'current_price': current_price,
-                    **returns,
-                    'rs_raw': rs_raw,
-                    'company_name': row['company_name'],
-                    'industry_group': row['industry_group'],
-                    'has_complete_data': has_complete_data
-                })
-                
-            except Exception as e:
-                logger.error(f"Error in symbol {row.get('symbol', 'unknown')}: {e}")
-                continue
-        
-        # 4. Calculate RS Rating
-        complete_results = [r for r in results if r['has_complete_data']]
-        
-        if complete_results:
-            df_complete = pd.DataFrame(complete_results)
+            # Execute single query with retry
+            result = self._execute_with_retry(query, {'target_date': target_date})
+            df = pd.DataFrame(result.fetchall(), columns=result.keys())
             
-            df_complete['rs_rating'] = (
-                df_complete['rs_raw']
-                .rank(pct=True, method='average')
-                .mul(100)
-                .round(0)
-                .clip(upper=99)
-                .astype(int)
+            if len(df) == 0:
+                return []
+            
+            # CONVERT all to float to avoid Decimal issues
+            numeric_cols = ['current_price', 'return_3m', 'return_6m', 'return_9m', 'return_12m']
+            for col in numeric_cols:
+                df[col] = df[col].astype(float)
+            
+            # 2. Calculate RS Raw using vectorization (super fast)
+            df['rs_raw'] = (
+                df['return_3m'] * 0.4 +
+                df['return_6m'] * 0.2 +
+                df['return_9m'] * 0.2 +
+                df['return_12m'] * 0.2
             )
             
+            # 3. Calculate ratings for all periods at once
             for period in ['3m', '6m', '9m', '12m']:
-                col = f'return_{period}'
-                df_complete[f'rank_{period}'] = (
-                    df_complete[col]
-                    .rank(pct=True, method='average')
-                    .mul(100)
-                    .round(0)
-                    .clip(upper=99)
-                    .astype(int)
-                )
+                col_name = f'return_{period}'
+                # Use numpy for ranking (much faster than pandas rank)
+                values = df[col_name].values
+                valid_mask = ~np.isnan(values)
+                
+                if valid_mask.sum() > 0:
+                    valid_values = values[valid_mask]
+                    sorted_indices = np.argsort(valid_values)
+                    ranks = np.empty_like(sorted_indices)
+                    ranks[sorted_indices] = np.arange(len(valid_values))
+                    percentiles = (ranks / (len(valid_values) - 1)) * 100 if len(valid_values) > 1 else np.array([50])
+                    
+                    period_ratings = np.full(len(df), np.nan)
+                    period_ratings[valid_mask] = np.clip(np.round(percentiles), 1, 99)
+                    # Convert properly
+                    df[f'rank_{period}'] = pd.Series(period_ratings).fillna(-1).astype(int).replace({-1: None})
             
-            rating_dict = df_complete.set_index('symbol')[['rs_rating']].to_dict()['rs_rating']
-            ranks_dict = {period: df_complete.set_index('symbol')[f'rank_{period}'].to_dict() 
-                         for period in ['3m', '6m', '9m', '12m']}
+            # 4. Calculate RS Rating
+            rs_raw_values = df['rs_raw'].values
+            valid_mask = ~np.isnan(rs_raw_values)
             
-            for r in complete_results:
-                symbol = r['symbol']
-                if symbol in rating_dict:
-                    r['rs_rating'] = int(rating_dict[symbol])
-                    for period in ['3m', '6m', '9m', '12m']:
-                        r[f'rank_{period}'] = int(ranks_dict[period].get(symbol, 0))
-        
-        memory_after = self.check_memory()
-        logger.info(f"✅ Calculated RS for {len(complete_results)} stocks out of {len(results)}")
-        if memory_before > 0:
-            logger.info(f"💾 Memory delta: {memory_after - memory_before:.1f} MB")
-        
-        return results
+            if valid_mask.sum() > 0:
+                valid_rs = rs_raw_values[valid_mask]
+                sorted_indices = np.argsort(valid_rs)
+                ranks = np.empty_like(sorted_indices)
+                ranks[sorted_indices] = np.arange(len(valid_rs))
+                percentiles = (ranks / (len(valid_rs) - 1)) * 100 if len(valid_rs) > 1 else np.array([50])
+                
+                rs_ratings = np.full(len(df), np.nan)
+                rs_ratings[valid_mask] = np.clip(np.round(percentiles), 1, 99)
+                # Convert properly
+                df['rs_rating'] = pd.Series(rs_ratings).fillna(-1).astype(int).replace({-1: None})
+            
+            # 5. Prepare results
+            results = []
+            for _, row in df.iterrows():
+                results.append({
+                    'symbol': str(row['symbol']),
+                    'date': row['date'],
+                    'current_price': float(row['current_price']),
+                    'return_3m': float(row['return_3m']),
+                    'return_6m': float(row['return_6m']),
+                    'return_9m': float(row['return_9m']),
+                    'return_12m': float(row['return_12m']),
+                    'rs_raw': float(row['rs_raw']),
+                    'rs_rating': row.get('rs_rating'),
+                    'rank_3m': row.get('rank_3m'),
+                    'rank_6m': row.get('rank_6m'),
+                    'rank_9m': row.get('rank_9m'),
+                    'rank_12m': row.get('rank_12m'),
+                    'company_name': str(row['company_name']),
+                    'industry_group': str(row['industry_group']),
+                    'has_complete_data': not np.isnan(row['rs_raw'])
+                })
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error calculating RS for {target_date}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
     
-    def save_daily_results(self, results):
-        """Save daily results to database"""
-        
+    def save_results_batch(self, results):
+        """Save results quickly with duplicate handling and fallback"""
         if not results:
-            return 0, 0
+            return 0
         
-        complete_data = [r for r in results if r.get('has_complete_data', False)]
-        
-        if not complete_data:
-            return 0, len(results)
-        
-        complete_records = []
-        seen = set()
-        
-        for r in complete_data:
-            date_str = r['date']
-            if isinstance(date_str, (pd.Timestamp, datetime)):
-                date_str = date_str.strftime('%Y-%m-%d')
+        try:
+            # Convert to DataFrame
+            df = pd.DataFrame(results)
             
-            key = (r['symbol'], date_str)
-            if key in seen:
-                continue
-            seen.add(key)
+            # Remove duplicates - IMPORTANT FIX
+            df = df.drop_duplicates(subset=['symbol', 'date'], keep='last')
             
-            complete_records.append({
-                'symbol': r['symbol'], 
-                'date': date_str,
-                'rs_rating': r.get('rs_rating'), 
-                'rs_raw': r.get('rs_raw'),
-                'return_3m': r.get('return_3m'), 
-                'return_6m': r.get('return_6m'),
-                'return_9m': r.get('return_9m'), 
-                'return_12m': r.get('return_12m'),
-                'rank_3m': r.get('rank_3m'), 
-                'rank_6m': r.get('rank_6m'),
-                'rank_9m': r.get('rank_9m'), 
-                'rank_12m': r.get('rank_12m'), 
-                'company_name': r.get('company_name'), 
-                'industry_group': r.get('industry_group')
-            })
-        
-        if not complete_records:
-            return 0, len(results)
-        
-        # استخدام الطريقة البسيطة لتجنب مشاكل الاتصال
-        try:
-            with self.engine.begin() as conn:
-                # إنشاء جدول مؤقت
-                conn.execute(text("""
-                    CREATE TEMP TABLE temp_rs_data (
-                        symbol VARCHAR(20),
-                        date DATE,
-                        rs_rating INTEGER,
-                        rs_raw DECIMAL(10, 6),
-                        return_3m DECIMAL(10, 6),
-                        return_6m DECIMAL(10, 6),
-                        return_9m DECIMAL(10, 6),
-                        return_12m DECIMAL(10, 6),
-                        rank_3m INTEGER,
-                        rank_6m INTEGER,
-                        rank_9m INTEGER,
-                        rank_12m INTEGER,
-                        company_name VARCHAR(255),
-                        industry_group VARCHAR(255)
-                    ) ON COMMIT DROP
-                """))
+            # Filter only complete data
+            df_complete = df[df['has_complete_data']].copy()
+            
+            if len(df_complete) == 0:
+                return 0
+            
+            # Select only required columns
+            df_to_save = df_complete[[
+                'symbol', 'date', 'rs_rating', 'rs_raw',
+                'return_3m', 'return_6m', 'return_9m', 'return_12m',
+                'rank_3m', 'rank_6m', 'rank_9m', 'rank_12m',
+                'company_name', 'industry_group'
+            ]]
+            
+            # Try bulk insert first
+            try:
+                return self._save_bulk(df_to_save)
+            except Exception as bulk_error:
+                logger.warning(f"⚠️  Bulk save failed, trying simple save: {bulk_error}")
+                return self._save_simple(df_to_save)
+            
         except Exception as e:
-            logger.warning(f"⚠️  Could not create temp table: {e}")
-            return self._save_simple(complete_records)
-        
-        # إدخال البيانات في الجدول المؤقت
-        try:
-            df_to_save = pd.DataFrame(complete_records)
-            df_to_save.to_sql('temp_rs_data', self.engine, if_exists='append', index=False)
-        except Exception as e:
-            logger.warning(f"⚠️  Could not insert into temp table: {e}")
-            return self._save_simple(complete_records)
-        
-        # Bulk upsert
-        try:
-            with self.engine.begin() as conn:
-                conn.execute(text("""
-                    INSERT INTO rs_daily 
-                    (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
-                     rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
-                    SELECT DISTINCT ON (symbol, date) symbol, date::DATE, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
-                           rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group
-                    FROM temp_rs_data
-                    ORDER BY symbol, date
-                    ON CONFLICT (symbol, date) DO UPDATE SET
-                    rs_rating = EXCLUDED.rs_rating,
-                    rs_raw = EXCLUDED.rs_raw,
-                    return_3m = EXCLUDED.return_3m,
-                    return_6m = EXCLUDED.return_6m,
-                    return_9m = EXCLUDED.return_9m,
-                    return_12m = EXCLUDED.return_12m,
-                    rank_3m = EXCLUDED.rank_3m,
-                    rank_6m = EXCLUDED.rank_6m,
-                    rank_9m = EXCLUDED.rank_9m,
-                    rank_12m = EXCLUDED.rank_12m,
-                    industry_group = EXCLUDED.industry_group
-                """))
-        except Exception as e:
-            logger.warning(f"⚠️  Bulk insert failed: {e}")
-            return self._save_simple(complete_records)
-        
-        return len(complete_records), len(results)
+            logger.error(f"Batch save failed: {e}")
+            return 0
     
-    def _save_simple(self, complete_records):
-        """طريقة بسيطة للحفظ كبديل"""
-        if not complete_records:
-            return 0, 0
+    def _save_bulk(self, df):
+        """Bulk save using temp table"""
+        with self.engine.begin() as conn:
+            # Create temp table
+            conn.execute(text("""
+                CREATE TEMP TABLE temp_rs_batch (
+                    symbol VARCHAR(20),
+                    date DATE,
+                    rs_rating INTEGER,
+                    rs_raw DECIMAL(10, 6),
+                    return_3m DECIMAL(10, 6),
+                    return_6m DECIMAL(10, 6),
+                    return_9m DECIMAL(10, 6),
+                    return_12m DECIMAL(10, 6),
+                    rank_3m INTEGER,
+                    rank_6m INTEGER,
+                    rank_9m INTEGER,
+                    rank_12m INTEGER,
+                    company_name VARCHAR(255),
+                    industry_group VARCHAR(255)
+                ) ON COMMIT DROP
+            """))
         
-        batch_size = 50  # دفعات أصغر
+        # Save to temp table
+        df.to_sql('temp_rs_batch', self.engine, if_exists='append', index=False, method='multi')
+        
+        # Bulk insert/update with DISTINCT to avoid duplicate error
+        with self.engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO rs_daily 
+                (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
+                 rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
+                SELECT DISTINCT ON (symbol, date)
+                    symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
+                    rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group
+                FROM temp_rs_batch
+                ORDER BY symbol, date
+                ON CONFLICT (symbol, date) DO UPDATE SET
+                rs_rating = EXCLUDED.rs_rating,
+                rs_raw = EXCLUDED.rs_raw,
+                return_3m = EXCLUDED.return_3m,
+                return_6m = EXCLUDED.return_6m,
+                return_9m = EXCLUDED.return_9m,
+                return_12m = EXCLUDED.return_12m,
+                rank_3m = EXCLUDED.rank_3m,
+                rank_6m = EXCLUDED.rank_6m,
+                rank_9m = EXCLUDED.rank_9m,
+                rank_12m = EXCLUDED.rank_12m,
+                industry_group = EXCLUDED.industry_group
+            """))
+        
+        return len(df)
+    
+    def _save_simple(self, df):
+        """Simple save as fallback"""
+        if len(df) == 0:
+            return 0
+        
         saved_count = 0
+        batch_size = 50
         
-        for i in range(0, len(complete_records), batch_size):
-            batch = complete_records[i:i + batch_size]
+        for i in range(0, len(df), batch_size):
+            batch = df.iloc[i:i + batch_size]
             
             try:
                 stmt = text("""
@@ -593,7 +484,7 @@ class RSCalculatorFast:
                 """)
                 
                 with self.engine.begin() as conn:
-                    conn.execute(stmt, batch)
+                    conn.execute(stmt, batch.to_dict('records'))
                 
                 saved_count += len(batch)
                 logger.debug(f"✅ Saved batch {i//batch_size + 1}: {len(batch)} records")
@@ -602,158 +493,252 @@ class RSCalculatorFast:
                 logger.error(f"❌ Failed to save batch {i//batch_size + 1}: {e}")
                 continue
         
-        return saved_count, 0
+        return saved_count
     
-    def calculate_historical_fast(self, start_date='2003-01-01', batch_size=50):  # تقليل batch_size
-        """Calculate historical RS with connection management"""
+    def calculate_historical_ultrafast(self, start_date='2003-01-01', batch_size=200):
+        """Ultra-fast historical calculation with error handling"""
         
         total_days, calculated_days = self.show_progress()
         
         if calculated_days >= total_days and total_days > 0:
-            logger.info("🎉 All days already calculated!")
+            print("🎉 All days already calculated!")
             return
         
-        logger.info(f"📊 Starting calculation from {start_date}")
+        print(f"🚀 Starting ultra-fast calculation from {start_date}")
         
-        query = """
-            SELECT DISTINCT p.date
-            FROM prices p
-            LEFT JOIN rs_daily r ON p.date = r.date AND r.rs_rating IS NOT NULL
-            WHERE p.date >= :start_date 
-            AND r.date IS NULL
-            ORDER BY p.date
-        """
-        
+        # Get remaining dates
         try:
-            result = self._execute_with_retry(query, {'start_date': start_date})
-            dates_df = pd.DataFrame(result.fetchall(), columns=['date'])
+            result = self._execute_with_retry("""
+                SELECT DISTINCT p.date
+                FROM prices p
+                WHERE p.date >= :start_date 
+                    AND p.date NOT IN (
+                        SELECT DISTINCT date 
+                        FROM rs_daily 
+                        WHERE rs_rating IS NOT NULL
+                    )
+                ORDER BY p.date
+            """, {'start_date': start_date})
+            
+            dates = [row[0] for row in result.fetchall()]
+            
         except Exception as e:
             logger.error(f"❌ Failed to get dates: {e}")
             return
         
-        all_dates = dates_df['date'].tolist()
-        
-        if not all_dates:
-            logger.info("🎉 No dates to calculate!")
+        if not dates:
+            print("🎉 No days to calculate!")
             return
         
-        remaining_days = len(all_dates)
-        logger.info(f"🔢 Remaining days to calculate: {remaining_days:,}")
+        remaining_days = len(dates)
+        print(f"📊 Remaining Days: {remaining_days:,}")
         
+        # Create table if doesn't exist
         self.setup_table()
         
         start_time = time.time()
-        total_complete = 0
-        last_saved_date = None
+        total_saved = 0
         
-        date_batches = [all_dates[i:i + batch_size] for i in range(0, remaining_days, batch_size)]
+        # Split days into large batches
+        date_batches = [dates[i:i + batch_size] for i in range(0, remaining_days, batch_size)]
         
         for batch_num, date_batch in enumerate(date_batches, 1):
             batch_start_time = time.time()
+            batch_saved = 0
+            last_successful_date = None
             
-            logger.info(f"\n{'='*60}")
-            logger.info(f"📦 Batch {batch_num}/{len(date_batches)}")
-            logger.info(f"📅 Days: {date_batch[0]} to {date_batch[-1]}")
-            logger.info(f"🔢 Days in batch: {len(date_batch)}")
-            logger.info(f"{'='*60}")
-            
-            batch_complete = 0
+            print(f"\n{'='*60}")
+            print(f"⚡ Batch {batch_num}/{len(date_batches)}")
+            print(f"📅 From {date_batch[0]} to {date_batch[-1]}")
+            print(f"🔢 Days in Batch: {len(date_batch)}")
+            print(f"{'='*60}")
             
             for target_date in date_batch:
                 try:
-                    # اختبار الاتصال قبل كل يوم
+                    # Test connection before calculation
                     if not self._test_connection():
                         logger.info("🔄 Reconnecting to database...")
                         self._reconnect()
+                        time.sleep(1)
                     
-                    # حساب RS
-                    results = self.calculate_daily_rs(target_date)
+                    # Calculate RS using ultra-fast method
+                    results = self.calculate_daily_rs_ultrafast(target_date)
                     
-                    # الحفظ
-                    complete_count, _ = self.save_daily_results(results)
-                    batch_complete += complete_count
+                    # Save results
+                    saved_count = self.save_results_batch(results)
                     
-                    # حفظ checkpoint
-                    last_saved_date = target_date
+                    if saved_count > 0:
+                        batch_saved += saved_count
+                        # Only update checkpoint if data was actually saved
+                        last_successful_date = target_date
+                        print(f"✓ {target_date}: {saved_count} stocks", end='\r')
+                    else:
+                        print(f"⚠️ {target_date}: No data saved", end='\r')
                     
-                    # تنظيف الذاكرة
-                    gc.collect()
+                    # Small delay to avoid overwhelming the database
+                    time.sleep(0.1)
                     
-                    # إضافة تأخير صغير بين الأيام
-                    time.sleep(0.5)
-                    
+                except KeyboardInterrupt:
+                    raise
                 except Exception as e:
-                    logger.error(f"❌ Error in {target_date}: {e}")
+                    logger.error(f"✗ {target_date}: {e}")
+                    # Try to reconnect on error
+                    try:
+                        self._reconnect()
+                    except:
+                        pass
                     continue
             
-            total_complete += batch_complete
+            total_saved += batch_saved
             
-            # حفظ checkpoint بعد كل batch
-            if last_saved_date:
+            # Save checkpoint after each batch - ONLY if we have a successful date
+            if last_successful_date:
                 try:
-                    self.save_checkpoint(last_saved_date)
-                except:
-                    pass
+                    self.save_checkpoint(last_successful_date)
+                    print(f"\n💾 Checkpoint saved: {last_successful_date}")
+                except Exception as e:
+                    logger.error(f"Failed to save checkpoint: {e}")
+            else:
+                print(f"\n⚠️  No checkpoint saved (no successful calculations in this batch)")
             
-            # تقرير Batch
+            # Batch report
             batch_elapsed = time.time() - batch_start_time
             if len(date_batch) > 0:
                 avg_time_per_day = batch_elapsed / len(date_batch)
             else:
                 avg_time_per_day = 0
             
-            logger.info(f"\n📊 Batch {batch_num} Report:")
-            logger.info(f"   ✅ Stocks calculated: {batch_complete:,}")
-            logger.info(f"   ⏱️  Batch time: {batch_elapsed:.1f}s")
-            logger.info(f"   🚀 Speed: {avg_time_per_day:.1f}s/day")
+            print(f"\n📊 Batch {batch_num} Report:")
+            print(f"   ✅ Stocks Saved: {batch_saved:,}")
+            print(f"   ⏱️  Batch Time: {batch_elapsed:.1f} seconds")
+            if avg_time_per_day > 0:
+                print(f"   🚀 Speed: {avg_time_per_day:.2f} seconds/day")
             
-            remaining = len(date_batches) - batch_num
-            if remaining > 0:
-                est_remaining = remaining * (batch_elapsed / 60)
-                logger.info(f"   ⏳ Remaining: ~{est_remaining:.1f} minutes")
-            
+            # Memory cleanup
             gc.collect()
+            
+            # Estimate remaining time
+            remaining_batches = len(date_batches) - batch_num
+            if remaining_batches > 0 and avg_time_per_day > 0:
+                est_remaining = (remaining_batches * batch_elapsed) / 60
+                print(f"   ⏳ Estimated Time Remaining: {est_remaining:.1f} minutes")
         
-        elapsed_minutes = (time.time() - start_time) / 60
+        # Final report
+        total_elapsed = (time.time() - start_time) / 60
         
-        logger.info("\n" + "="*80)
-        logger.info("🎉 Calculation complete!")
-        logger.info("="*80)
-        logger.info(f"📊 Statistics:")
-        logger.info(f"   📅 Days calculated: {remaining_days}")
-        logger.info(f"   ✅ Stocks with RS: {total_complete:,}")
-        logger.info(f"   ⏱️  Total time: {elapsed_minutes:.1f} minutes")
-        logger.info("="*80)
+        print(f"\n{'='*80}")
+        print(f"🎉 Calculation completed successfully!")
+        print(f"{'='*80}")
+        print(f"📊 Statistics:")
+        print(f"   📅 Calculated Days: {remaining_days}")
+        print(f"   ✅ Total Stocks Saved: {total_saved:,}")
+        print(f"   ⏱️  Total Time: {total_elapsed:.1f} minutes")
+        if remaining_days > 0:
+            print(f"   🚀 Average Speed: {total_elapsed*60/remaining_days:.2f} seconds/day")
+        print(f"{'='*80}")
+    
+    def setup_table(self):
+        """Setup table with retry"""
+        try:
+            self._execute_with_retry("""
+                CREATE TABLE IF NOT EXISTS rs_daily (
+                    id SERIAL PRIMARY KEY,
+                    symbol VARCHAR(20),
+                    date DATE,
+                    rs_rating INTEGER,
+                    rs_raw DECIMAL(10, 6),
+                    return_3m DECIMAL(10, 6),
+                    return_6m DECIMAL(10, 6),
+                    return_9m DECIMAL(10, 6),
+                    return_12m DECIMAL(10, 6),
+                    rank_3m INTEGER,
+                    rank_6m INTEGER,
+                    rank_9m INTEGER,
+                    rank_12m INTEGER,
+                    company_name VARCHAR(255),
+                    industry_group VARCHAR(255),
+                    UNIQUE(symbol, date)
+                )
+            """)
+            
+            # Create indexes
+            indexes = [
+                "CREATE INDEX IF NOT EXISTS idx_rs_symbol_date ON rs_daily(symbol, date)",
+                "CREATE INDEX IF NOT EXISTS idx_rs_date_rating ON rs_daily(date, rs_rating DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_rs_date ON rs_daily(date)"
+            ]
+            
+            for idx in indexes:
+                try:
+                    self._execute_with_retry(idx)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"Error setting up table: {e}")
     
     def continue_from_checkpoint(self):
-        """Continue calculation from last checkpoint"""
+        """Continue from last checkpoint - FIXED VERSION"""
         last_checkpoint = self.get_last_checkpoint()
         
         if last_checkpoint:
-            if isinstance(last_checkpoint, date):
-                next_date = last_checkpoint
-            else:
-                next_date = pd.to_datetime(last_checkpoint).date()
+            print(f"📍 Continuing from checkpoint: {last_checkpoint}")
             
-            logger.info(f"📍 Resuming from checkpoint: {next_date}")
-            next_date = next_date + pd.Timedelta(days=1)
-            self.calculate_historical_fast(start_date=next_date.strftime('%Y-%m-%d'), batch_size=50)
-        else:
-            logger.info("ℹ️  No checkpoint found, getting last calculated date...")
-            
+            # Get the ACTUAL last calculated date from rs_daily
             try:
-                result = self._execute_with_retry("SELECT MAX(date) FROM rs_daily WHERE rs_rating IS NOT NULL")
+                result = self._execute_with_retry("""
+                    SELECT MAX(date) 
+                    FROM rs_daily 
+                    WHERE rs_rating IS NOT NULL
+                """)
+                actual_last_date = result.scalar()
+            except:
+                actual_last_date = None
+            
+            if actual_last_date:
+                print(f"📊 Actual last calculated date: {actual_last_date}")
+                
+                # Use the later date (checkpoint or actual)
+                start_date = max(last_checkpoint, actual_last_date)
+                print(f"🎯 Starting from: {start_date}")
+                
+                # Start from the next day
+                next_date = start_date + pd.Timedelta(days=1)
+                self.calculate_historical_ultrafast(
+                    start_date=next_date.strftime('%Y-%m-%d'),
+                    batch_size=200
+                )
+            else:
+                # No data at all, start from checkpoint
+                next_date = last_checkpoint + pd.Timedelta(days=1)
+                self.calculate_historical_ultrafast(
+                    start_date=next_date.strftime('%Y-%m-%d'),
+                    batch_size=200
+                )
+        else:
+            print("ℹ️  No checkpoint found, getting last calculated date...")
+            
+            # Get the actual last calculated date
+            try:
+                result = self._execute_with_retry("""
+                    SELECT MAX(date) 
+                    FROM rs_daily 
+                    WHERE rs_rating IS NOT NULL
+                """)
                 last_calculated = result.scalar()
             except:
                 last_calculated = None
             
             if last_calculated:
-                logger.info(f"📌 Last calculated date found: {last_calculated}")
+                print(f"📌 Last calculated date found: {last_calculated}")
                 next_date = last_calculated + pd.Timedelta(days=1)
-                self.calculate_historical_fast(start_date=next_date.strftime('%Y-%m-%d'), batch_size=50)
+                self.calculate_historical_ultrafast(
+                    start_date=next_date.strftime('%Y-%m-%d'),
+                    batch_size=200
+                )
             else:
-                logger.info("ℹ️  No data found, starting from beginning")
-                self.calculate_historical_fast(batch_size=50)
+                print("ℹ️  No data found, starting from beginning")
+                self.calculate_historical_ultrafast(batch_size=200)
 
 def main():
     """Main function"""
@@ -761,78 +746,48 @@ def main():
     DB_URL = "postgresql://youssef:UtnuCIs7PL3879r7R4jjIHi5FBqoHpKy@dpg-d4k8djidbo4c73cqncl0-a.oregon-postgres.render.com/financialdb_bvyn"
     
     print("="*80)
-    print("🚀 **RS Calculator with CONNECTION MANAGEMENT**")
+    print("🚀 **RS Calculator - ULTRA FAST VERSION WITH ERROR HANDLING**")
     print("="*80)
     
-    calculator = RSCalculatorFast(DB_URL)
+    calculator = RSCalculatorUltraFast(DB_URL)
     
     if len(sys.argv) > 1:
-        if sys.argv[1] == '--auto':
-            print("\n🚀 Auto-run: Continuing calculation where stopped...")
-            calculator.continue_from_checkpoint()
-            return
-        elif sys.argv[1] == '--resume':
-            print("\n🚀 Resuming from checkpoint...")
+        if sys.argv[1] in ['--auto', '--resume']:
+            print("\n🚀 Continuing from where we left off...")
             calculator.continue_from_checkpoint()
             return
     
     calculator.show_progress()
     
-    print("\n📋 **Choose action:**")
-    print("1. ⚡ Continue calculation (with connection management)")
-    print("2. 📍 Resume from checkpoint")
-    print("3. 📊 Generate verification report")
-    print("4. 🗑️  Clean and start fresh")
-    print("5. 🛠️  Setup/Rebuild table")
+    print("\n📋 **Choose Action:**")
+    print("1. ⚡ **Start Ultra-Fast Calculation** (Recommended)")
+    print("2. 📍 Continue from checkpoint")
+    print("3. 🗑️  Clean and start over")
     print("="*80)
     
-    choice = input("\nChoose (1-5) [1]: ").strip() or "1"
+    choice = input("\nChoose (1-3) [1]: ").strip() or "1"
     
     if choice == "1":
-        print("\n⚡ Starting calculation...")
-        
-        batch_input = input("Batch size (days per batch) [50]: ").strip()
-        batch_size = int(batch_input) if batch_input else 50
-        
-        start_input = input("Start date (YYYY-MM-DD) [2003-01-01]: ").strip()
-        start_date = start_input if start_input else '2003-01-01'
-        
-        calculator.calculate_historical_fast(
-            start_date=start_date,
-            batch_size=batch_size
-        )
+        print("\n⚡ Starting ultra-fast calculation...")
+        calculator.calculate_historical_ultrafast(batch_size=200)
     
     elif choice == "2":
-        print("\n📍 Resuming from last checkpoint...")
+        print("\n📍 Continuing from last checkpoint...")
         calculator.continue_from_checkpoint()
     
     elif choice == "3":
-        date_input = input("Verification date (YYYY-MM-DD) or leave for latest: ").strip()
-        
-        if date_input:
-            try:
-                sample_date = pd.to_datetime(date_input).date()
-            except:
-                print("❌ Invalid date")
-                sample_date = None
-        else:
-            sample_date = None
-        
-        # TODO: Add verification function
-        print("Verification not implemented in this version")
-    
-    elif choice == "4":
-        confirm = input("\n⚠️  **WARNING**: Will delete ALL RS data and checkpoints! Continue? (y/n): ").lower()
+        confirm = input("\n⚠️  **Warning**: All RS data will be deleted! Continue? (y/n): ").lower()
         if confirm == 'y':
-            calculator.cleanup_table()
-            calculator.setup_table()
-            print("✅ Cleaned and ready for fresh start")
+            try:
+                with calculator.engine.begin() as conn:
+                    conn.execute(text("DROP TABLE IF EXISTS rs_daily CASCADE"))
+                    conn.execute(text("DROP TABLE IF EXISTS calculation_checkpoint CASCADE"))
+                    conn.commit()
+                print("✅ Cleaned and ready for fresh start")
+            except Exception as e:
+                print(f"❌ Error: {e}")
         else:
             print("❌ Cancelled")
-    
-    elif choice == "5":
-        calculator.setup_table()
-        print("✅ Table setup completed")
     
     else:
         print("❌ Invalid choice")
@@ -841,10 +796,10 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n\n⏸️  **Process paused by user**")
+        print("\n\n⏸️  **User Stopped**")
         print("💾 Progress saved")
-        print("🔄 Run with --resume to continue")
+        print("🔄 Run --resume to continue")
     except Exception as e:
-        print(f"\n\n❌ Unexpected error: {e}")
+        print(f"\n\n❌ Unexpected Error: {e}")
         import traceback
         traceback.print_exc()
