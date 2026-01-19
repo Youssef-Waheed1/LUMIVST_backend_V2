@@ -9,7 +9,7 @@ import pandas as pd
 import sys
 import os
 from datetime import datetime
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 from pathlib import Path
 
@@ -217,8 +217,8 @@ def import_csv_to_database(csv_file_path: str, batch_size: int = 1000):
         total_records = db.query(Price).count()
         total_symbols = db.query(Price.symbol).distinct().count()
         date_range = db.query(
-            db.func.min(Price.date),
-            db.func.max(Price.date)
+            func.min(Price.date),
+            func.max(Price.date)
         ).first()
         
         print(f"   • إجمالي السجلات: {total_records:,}")

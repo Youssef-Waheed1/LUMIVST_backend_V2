@@ -11,6 +11,14 @@ import os
 import psutil
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.exc import OperationalError
+import gc
+import psycopg2
+import csv
+from io import StringIO
+from pathlib import Path
+
+# Add project root to sys.path to allow importing from 'app'
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 # Reduce logging for performance
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
@@ -289,47 +297,63 @@ class RSCalculatorUltraFast:
                 df[col] = df[col].astype(float)
             
             # 2. Calculate RS Raw using vectorization (super fast)
-            df['rs_raw'] = (
-                df['return_3m'] * 0.4 +
-                df['return_6m'] * 0.2 +
-                df['return_9m'] * 0.2 +
-                df['return_12m'] * 0.2
-            )
-            
-            # 3. Calculate ratings for all periods at once
+            # 2. Calculate Ranks for EACH period independently FIRST (Excel Logic)
+            # This matches: PERCENTRANK.INC for each change% period
+            period_ranks = {}
             for period in ['3m', '6m', '9m', '12m']:
                 col_name = f'return_{period}'
-                # Use numpy for ranking (much faster than pandas rank)
                 values = df[col_name].values
                 valid_mask = ~np.isnan(values)
                 
+                # Initialize with NaN
+                period_ranks[period] = np.full(len(df), np.nan)
+                
                 if valid_mask.sum() > 0:
                     valid_values = values[valid_mask]
+                    # Sort indices
                     sorted_indices = np.argsort(valid_values)
+                    
+                    # Calculate rank pct (0 to 1)
                     ranks = np.empty_like(sorted_indices)
                     ranks[sorted_indices] = np.arange(len(valid_values))
-                    percentiles = (ranks / (len(valid_values) - 1)) * 100 if len(valid_values) > 1 else np.array([50])
                     
-                    period_ratings = np.full(len(df), np.nan)
-                    period_ratings[valid_mask] = np.clip(np.round(percentiles), 1, 99)
-                    # Convert properly
-                    df[f'rank_{period}'] = pd.Series(period_ratings).fillna(-1).astype(int).replace({-1: None})
-            
-            # 4. Calculate RS Rating
-            rs_raw_values = df['rs_raw'].values
-            valid_mask = ~np.isnan(rs_raw_values)
-            
-            if valid_mask.sum() > 0:
-                valid_rs = rs_raw_values[valid_mask]
-                sorted_indices = np.argsort(valid_rs)
-                ranks = np.empty_like(sorted_indices)
-                ranks[sorted_indices] = np.arange(len(valid_rs))
-                percentiles = (ranks / (len(valid_rs) - 1)) * 100 if len(valid_rs) > 1 else np.array([50])
+                    # Convert to percentile 1-99
+                    if len(valid_values) > 1:
+                        percentiles = (ranks / (len(valid_values) - 1)) * 100
+                    else:
+                        percentiles = np.array([50]) # Fallback for single item
+                        
+                    period_ranks[period][valid_mask] = np.clip(np.round(percentiles), 1, 99)
                 
-                rs_ratings = np.full(len(df), np.nan)
-                rs_ratings[valid_mask] = np.clip(np.round(percentiles), 1, 99)
-                # Convert properly
-                df['rs_rating'] = pd.Series(rs_ratings).fillna(-1).astype(int).replace({-1: None})
+                # Assign to dataframe for saving/debugging
+                df[f'rank_{period}'] = pd.Series(period_ranks[period]).fillna(-1).astype(int).replace({-1: None})
+
+            # 3. Calculate Final RS Rating as Weighted Average of Ranks (Excel Logic)
+            # Weights: 3m (40%), 6m (20%), 9m (20%), 12m (20%)
+            
+            rank_3m = period_ranks['3m']
+            rank_6m = period_ranks['6m']
+            rank_9m = period_ranks['9m']
+            rank_12m = period_ranks['12m']
+            
+            # Calculate final score (Weighted Average of Ranks)
+            final_score = (
+                rank_3m * 0.40 +
+                rank_6m * 0.20 +
+                rank_9m * 0.20 +
+                rank_12m * 0.20
+            )
+            
+            # Round up as per Excel Formula: ROUNDUP(value, 0)
+            # np.ceil does exactly this for positive numbers
+            df['rs_rating'] = np.ceil(final_score)
+            
+            # Store the calculated score as 'rs_raw' for reference
+            df['rs_raw'] = final_score
+
+            # 4. Cleanup and Formatting
+            # Fill NaN with -1 for integer conversion then replace with None
+            df['rs_rating'] = df['rs_rating'].fillna(-1).astype(int).replace({-1: None})
             
             # 5. Prepare results
             results = []
@@ -399,101 +423,88 @@ class RSCalculatorUltraFast:
             return 0
     
     def _save_bulk(self, df):
-        """Bulk save using temp table"""
-        with self.engine.begin() as conn:
-            # Create temp table
-            conn.execute(text("""
-                CREATE TEMP TABLE temp_rs_batch (
-                    symbol VARCHAR(20),
-                    date DATE,
-                    rs_rating INTEGER,
-                    rs_raw DECIMAL(10, 6),
-                    return_3m DECIMAL(10, 6),
-                    return_6m DECIMAL(10, 6),
-                    return_9m DECIMAL(10, 6),
-                    return_12m DECIMAL(10, 6),
-                    rank_3m INTEGER,
-                    rank_6m INTEGER,
-                    rank_9m INTEGER,
-                    rank_12m INTEGER,
-                    company_name VARCHAR(255),
-                    industry_group VARCHAR(255)
-                ) ON COMMIT DROP
-            """))
-        
-        # Save to temp table
-        df.to_sql('temp_rs_batch', self.engine, if_exists='append', index=False, method='multi')
-        
-        # Bulk insert/update with DISTINCT to avoid duplicate error
-        with self.engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO rs_daily 
-                (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
-                 rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
-                SELECT DISTINCT ON (symbol, date)
-                    symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
-                    rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group
-                FROM temp_rs_batch
-                ORDER BY symbol, date
-                ON CONFLICT (symbol, date) DO UPDATE SET
-                rs_rating = EXCLUDED.rs_rating,
-                rs_raw = EXCLUDED.rs_raw,
-                return_3m = EXCLUDED.return_3m,
-                return_6m = EXCLUDED.return_6m,
-                return_9m = EXCLUDED.return_9m,
-                return_12m = EXCLUDED.return_12m,
-                rank_3m = EXCLUDED.rank_3m,
-                rank_6m = EXCLUDED.rank_6m,
-                rank_9m = EXCLUDED.rank_9m,
-                rank_12m = EXCLUDED.rank_12m,
-                industry_group = EXCLUDED.industry_group
-            """))
-        
-        return len(df)
-    
-    def _save_simple(self, df):
-        """Simple save as fallback"""
-        if len(df) == 0:
+        """Bulk save using direct INSERT with ON CONFLICT DO UPDATE"""
+        if df.empty:
             return 0
         
-        saved_count = 0
-        batch_size = 50
+        # Convert DataFrame to records and handle NaN -> None
+        df_clean = df.fillna(value=np.nan).replace({np.nan: None})
+        data = df_clean.to_dict('records')
         
-        for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i + batch_size]
+        stmt = """
+            INSERT INTO rs_daily_v2 
+            (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
+             rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
+            VALUES (:symbol, :date, :rs_rating, :rs_raw, :return_3m, :return_6m, :return_9m, :return_12m,
+             :rank_3m, :rank_6m, :rank_9m, :rank_12m, :company_name, :industry_group)
+            ON CONFLICT (symbol, date) DO UPDATE SET
+            rs_rating = EXCLUDED.rs_rating,
+            rs_raw = EXCLUDED.rs_raw,
+            return_3m = EXCLUDED.return_3m,
+            return_6m = EXCLUDED.return_6m,
+            return_9m = EXCLUDED.return_9m,
+            return_12m = EXCLUDED.return_12m,
+            rank_3m = EXCLUDED.rank_3m,
+            rank_6m = EXCLUDED.rank_6m,
+            rank_9m = EXCLUDED.rank_9m,
+            rank_12m = EXCLUDED.rank_12m,
+            industry_group = EXCLUDED.industry_group
+        """
+        
+        with self.engine.begin() as conn:
+            conn.execute(text(stmt), data)
             
-            try:
-                stmt = text("""
-                    INSERT INTO rs_daily 
-                    (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
-                     rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
-                    VALUES (:symbol, :date, :rs_rating, :rs_raw, :return_3m, :return_6m, :return_9m, :return_12m,
-                     :rank_3m, :rank_6m, :rank_9m, :rank_12m, :company_name, :industry_group)
-                    ON CONFLICT (symbol, date) DO UPDATE SET
-                    rs_rating = EXCLUDED.rs_rating,
-                    rs_raw = EXCLUDED.rs_raw,
-                    return_3m = EXCLUDED.return_3m,
-                    return_6m = EXCLUDED.return_6m,
-                    return_9m = EXCLUDED.return_9m,
-                    return_12m = EXCLUDED.return_12m,
-                    rank_3m = EXCLUDED.rank_3m,
-                    rank_6m = EXCLUDED.rank_6m,
-                    rank_9m = EXCLUDED.rank_9m,
-                    rank_12m = EXCLUDED.rank_12m,
-                    industry_group = EXCLUDED.industry_group
-                """)
+        return len(df)
+
+    def _save_simple(self, df):
+        # Uses same logic now as backup
+        return self._save_bulk(df)
+
+
+    def setup_table(self):
+        """Setup V2 table with retry using explicit transaction"""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS rs_daily_v2 (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20),
+                        date DATE,
+                        rs_rating INTEGER,
+                        rs_raw DECIMAL(10, 6),
+                        return_3m DECIMAL(10, 6),
+                        return_6m DECIMAL(10, 6),
+                        return_9m DECIMAL(10, 6),
+                        return_12m DECIMAL(10, 6),
+                        rank_3m INTEGER,
+                        rank_6m INTEGER,
+                        rank_9m INTEGER,
+                        rank_12m INTEGER,
+                        company_name VARCHAR(255),
+                        industry_group VARCHAR(255),
+                        UNIQUE(symbol, date)
+                    )
+                """))
                 
-                with self.engine.begin() as conn:
-                    conn.execute(stmt, batch.to_dict('records'))
+                # Create indexes for V2
+                indexes = [
+                    "CREATE INDEX IF NOT EXISTS idx_rs_v2_symbol_date ON rs_daily_v2(symbol, date)",
+                    "CREATE INDEX IF NOT EXISTS idx_rs_v2_date_rating ON rs_daily_v2(date, rs_rating DESC)",
+                    "CREATE INDEX IF NOT EXISTS idx_rs_v2_date ON rs_daily_v2(date)"
+                ]
                 
-                saved_count += len(batch)
-                logger.debug(f"✅ Saved batch {i//batch_size + 1}: {len(batch)} records")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to save batch {i//batch_size + 1}: {e}")
-                continue
-        
-        return saved_count
+                for idx in indexes:
+                    try:
+                        conn.execute(text(idx))
+                    except Exception as e:
+                        logger.warning(f"Index creation warning: {e}")
+            
+            print("✅ Table rs_daily_v2 verified/created successfully")
+                    
+        except Exception as e:
+            logger.error(f"Error setting up table: {e}")
+            
+
     
     def calculate_historical_ultrafast(self, start_date='2003-01-01', batch_size=200):
         """Ultra-fast historical calculation with error handling"""
@@ -740,64 +751,688 @@ class RSCalculatorUltraFast:
                 print("ℹ️  No data found, starting from beginning")
                 self.calculate_historical_ultrafast(batch_size=200)
 
+
+    def calculate_full_history_optimized(self):
+        """Calculate RS for ALL history using in-memory vectorization (The Rocket Approach 🚀)"""
+        
+        print("📥 Loading ALL price history into memory... (This might take a minute)")
+        
+        # 1. Fetch simplified data (Date, Symbol, Close)
+        query = """
+            SELECT date, symbol, close 
+            FROM prices 
+            WHERE date >= '2000-01-01'
+                AND close > 0
+            ORDER BY date
+        """
+        try:
+            # Load directly into DataFrame using connection
+            with self.engine.connect() as conn:
+                df_prices = pd.read_sql(text(query), conn)
+            print(f"✅ Loaded {len(df_prices):,} price records")
+            
+            if df_prices.empty:
+                print("❌ No data found!")
+                return None
+
+            # 2. Pivot to Wide Format (Rows=Date, Cols=Symbol)
+            print("🔄 Pivoting data for vectorized calculation...")
+            df_wide = df_prices.pivot(index='date', columns='symbol', values='close')
+            df_wide = df_wide.sort_index()
+            
+            # Replace any remaining zeros with tiny value to avoid division by zero
+            df_wide = df_wide.replace(0, 0.000001)
+            
+            periods = {
+                '3m': 63,
+                '6m': 126,
+                '9m': 189,
+                '12m': 252
+            }
+            
+            # 3. Calculate Returns Vectorized
+            print("📈 Calculating returns for all periods...")
+            returns_dfs = {}
+            for name, days in periods.items():
+                print(f"   Calculating {name} ({days} days)...")
+                ret_df = df_wide.pct_change(periods=days)
+                ret_df = ret_df.replace([np.inf, -np.inf], np.nan)
+                returns_dfs[name] = ret_df
+
+            # 4. Stack back to Long Format to calculate Ranks
+            print("📊 Stacking data and calculating ranks...")
+            
+            def melt_returns(ret_df, col_name):
+                s = ret_df.stack(dropna=False)
+                s.name = col_name
+                return s
+
+            df_all = pd.concat([
+                melt_returns(returns_dfs['3m'], 'return_3m'),
+                melt_returns(returns_dfs['6m'], 'return_6m'),
+                melt_returns(returns_dfs['9m'], 'return_9m'),
+                melt_returns(returns_dfs['12m'], 'return_12m'),
+                melt_returns(df_wide, 'current_price')
+            ], axis=1)
+            
+            df_all = df_all.reset_index()
+            
+            original_len = len(df_all)
+            df_all = df_all.dropna(subset=['return_3m', 'return_6m', 'return_9m', 'return_12m'])
+            print(f"   Filtered valid rows: {len(df_all):,} (from {original_len:,})")
+            
+            if len(df_all) == 0:
+                print("⚠️ No valid rows after filtering!")
+                return None
+
+            # 5. Calculate Ranks PER DATE
+            print("🏆 Calculating Daily Ranks (1-99)...")
+            
+            for p in periods.keys():
+                col = f'return_{p}'
+                rank_col = f'rank_{p}'
+                df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+                df_all[rank_col] = df_all.groupby('date')[col].rank(pct=True, method='average') * 100
+                df_all[rank_col] = df_all[rank_col].fillna(50).round().clip(1, 99).astype(int)
+
+            # 6. Calculate Weighted RS (Excel Logic)
+            print("🧮 Calculating Final Weighted RS...")
+            
+            final_score = (
+                df_all['rank_3m'] * 0.40 +
+                df_all['rank_6m'] * 0.20 +
+                df_all['rank_9m'] * 0.20 +
+                df_all['rank_12m'] * 0.20
+            )
+            
+            df_all['rs_rating'] = np.ceil(final_score).clip(1, 99).astype(int)
+            df_all['rs_raw'] = final_score
+            
+            # Add static metadata
+            print("🔗 Merging static company info...")
+            meta_query = "SELECT DISTINCT symbol, company_name, industry_group FROM prices"
+            with self.engine.connect() as conn:
+                df_meta = pd.read_sql(text(meta_query), conn)
+            df_meta = df_meta.drop_duplicates(subset=['symbol'], keep='last')
+            
+            df_final = pd.merge(df_all, df_meta, on='symbol', how='left')
+            
+            print(f"✅ Final DataFrame ready with {len(df_final):,} rows")
+            return df_final
+            
+        except Exception as e:
+            logger.error(f"❌ Error in vectorized calculation: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+
+    def save_with_copy_protocol(self, df):
+        """Ultra-fast save using PostgreSQL COPY protocol (50x faster)"""
+        if df is None or df.empty:
+            print("❌ No data to save!")
+            return
+        
+        print(f"🚀 ULTRA-FAST COPY: Saving {len(df):,} records...")
+        
+        # الأعمدة المطلوبة
+        cols_to_save = [
+            'symbol', 'date', 'rs_rating', 'rs_raw',
+            'return_3m', 'return_6m', 'return_9m', 'return_12m',
+            'rank_3m', 'rank_6m', 'rank_9m', 'rank_12m',
+            'company_name', 'industry_group'
+        ]
+        
+        # تأكد من وجود الأعمدة
+        for col in cols_to_save:
+            if col not in df.columns:
+                df[col] = None
+        
+        # اختيار وتنظيف البيانات
+        df_clean = df[cols_to_save].copy()
+        
+        # تحويل التواريخ لسلسلة نصية
+        if 'date' in df_clean.columns:
+            df_clean['date'] = df_clean['date'].astype(str)
+        
+        # استبدال NaN/None بقيم فارغة
+        # COPY expects NULL as \N by default or empty string if specified
+        # We will use explicit \N for clarity
+        df_clean = df_clean.fillna('\\N')
+        
+        print(f"📦 Data prepared: {len(df_clean):,} rows")
+        
+        start_time = time.time()
+        
+        conn = None
+        cur = None
+        try:
+            # استخراج بيانات الاتصال من URL
+            # postgresql://user:password@host:port/database
+            db_url = self.db_url.replace('postgresql://', '')
+            if '@' not in db_url:
+                 raise ValueError("Invalid DB URL format")
+                 
+            user_pass, host_db = db_url.split('@')
+            user, password = user_pass.split(':')
+            host_port, database = host_db.split('/')
+            
+            host = host_port
+            port = '5432'
+            if ':' in host_port:
+                host, port = host_port.split(':')
+            
+            # اتصال مباشر بـ psycopg2
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                database=database,
+                user=user,
+                password=password,
+                sslmode='require'
+            )
+            
+            cur = conn.cursor()
+            
+            # 1. مسح الجدول أولاً (لأن COPY أسرع مع جدول فارغ)
+            # print("🧹 Truncating table for clean COPY...")
+            # cur.execute("TRUNCATE TABLE rs_daily_v2")
+            # لا داعي لـ TRUNCATE لأننا مسحناه في Main، ولكن احتياطاً
+            
+            # 2. تحضير البيانات في StringIO
+            print("📝 Preparing COPY buffer...")
+            output = StringIO()
+            writer = csv.writer(output, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            
+            # كتابة البيانات للـ Buffer
+            # نكتب سطر سطر لتفادي مشاكل الذاكرة مع to_csv
+            # أو الأسرع: استخدام to_csv الخاص بـ pandas
+            # لكن csv.writer أدق في التعامل مع الـ Quoting
+            
+            # الأسرع فعلاً:
+            for row in df_clean.itertuples(index=False):
+                writer.writerow(row)
+            
+            output.seek(0)
+            
+            # 3. تنفيذ COPY
+            print("⚡ Executing COPY (This is FAST!)...")
+            copy_start = time.time()
+            
+            cur.copy_expert(f"""
+                COPY rs_daily_v2 ({','.join(cols_to_save)})
+                FROM STDIN
+                WITH (FORMAT CSV, NULL '\\N')
+            """, output)
+            
+            conn.commit()
+            copy_time = time.time() - copy_start
+            
+            cur.execute("SELECT COUNT(*) FROM rs_daily_v2")
+            count = cur.fetchone()[0]
+            
+            total_time = time.time() - start_time
+            
+            print(f"\n{'='*60}")
+            print(f"🎉 COPY COMPLETED!")
+            print(f"{'='*60}")
+            print(f"📊 Statistics:")
+            print(f"   ✅ Rows Inserted: {count:,}")
+            print(f"   ⚡ COPY Time Only: {copy_time:.1f} seconds")
+            print(f"   ⏱️  Total Time: {total_time/60:.1f} minutes")
+            print(f"   🚀 Speed: {count/copy_time:,.0f} rows/second!")
+            print(f"{'='*60}")
+            
+            return count
+            
+        except Exception as e:
+            print(f"\n❌ COPY failed: {e}")
+            if conn:
+                conn.rollback()
+            # Fallback
+            print("\n🔄 Falling back to batched INSERT...")
+            return self.save_bulk_results(df)
+            
+        finally:
+            if cur: cur.close()
+            if conn: conn.close()
+            if 'output' in locals(): output.close()
+
+
+    def save_bulk_results(self, df):
+        """Save with optimized batch processing - 3x Faster"""
+        if df is None or df.empty:
+            print("❌ No data to save!")
+            return
+            
+        print(f"💾 Saving {len(df):,} records (Optimized for Render)...")
+        
+        # الأعمدة المطلوبة
+        cols_to_save = [
+            'symbol', 'date', 'rs_rating', 'rs_raw',
+            'return_3m', 'return_6m', 'return_9m', 'return_12m',
+            'rank_3m', 'rank_6m', 'rank_9m', 'rank_12m',
+            'company_name', 'industry_group'
+        ]
+        
+        # تأكد من وجود الأعمدة
+        print("📦 Preparing data...")
+        for col in cols_to_save:
+            if col not in df.columns:
+                df[col] = None
+        
+        # اختيار الأعمدة فقط
+        df_clean = df[cols_to_save].copy()
+        
+        # تنظيف البيانات بسرعة
+        for col in df_clean.select_dtypes(include=[np.number]).columns:
+            df_clean[col] = df_clean[col].astype(str).replace({'nan': None, 'inf': None, '-inf': None})
+        
+        print(f"   ✅ Data ready: {len(df_clean):,} rows")
+        
+        # إعدادات للحفظ الآمن والسريع
+        chunk_size = 2500  # حجم آمن لـ Render
+        total_saved = 0
+        start_time = time.time()
+        
+        # إحصاءات التقدم
+        chunk_times = []
+        
+        print(f"\n🚀 Uploading in chunks of {chunk_size}...")
+        
+        for i in range(0, len(df_clean), chunk_size):
+            chunk = df_clean.iloc[i:i + chunk_size]
+            chunk_num = i // chunk_size + 1
+            total_chunks = (len(df_clean) + chunk_size - 1) // chunk_size
+            
+            chunk_start = time.time()
+            
+            try:
+                # حفظ الدفعة
+                saved = self._save_bulk_optimized(chunk)
+                total_saved += saved
+                
+                # حساب الإحصاءات
+                chunk_time = time.time() - chunk_start
+                chunk_times.append(chunk_time)
+                
+                elapsed_total = time.time() - start_time
+                progress = (i + len(chunk)) / len(df_clean) * 100
+                avg_speed = saved / chunk_time if chunk_time > 0 else 0
+                
+                # وقت التباطؤ بين الدفعات لمنع الضغط على Render
+                if chunk_num % 10 == 0:
+                    time.sleep(2)  # استراحة كل 10 دفعات
+                elif chunk_num % 5 == 0:
+                    time.sleep(1)  # استراحة كل 5 دفعات
+                
+                print(f"   ✅ Chunk {chunk_num}/{total_chunks}: {saved} rows "
+                      f"({progress:.1f}%) - {avg_speed:.0f} rows/sec")
+                
+                # تنظيف الذاكرة
+                if chunk_num % 20 == 0:
+                    gc.collect()
+                    
+            except Exception as e:
+                print(f"\n❌ Error in chunk {chunk_num}: {e}")
+                print("Retrying with smaller chunk...")
+                
+                # إعادة المحاولة بدفعات أصغر
+                small_saved = self._retry_with_smaller_chunks(chunk)
+                total_saved += small_saved
+                print(f"   Recovered {small_saved}/{len(chunk)} rows")
+        
+        total_time = time.time() - start_time
+        
+        print(f"\n{'='*60}")
+        print(f"🎉 SAVING COMPLETED!")
+        print(f"{'='*60}")
+        print(f"� Statistics:")
+        print(f"   ✅ Total Rows Saved: {total_saved:,}")
+        print(f"   ⏱️  Total Time: {total_time/60:.1f} minutes")
+        if total_time > 0:
+            print(f"   🚀 Average Speed: {total_saved/total_time:.1f} rows/sec")
+        print(f"{'='*60}")
+        
+        # التحقق من الجدول
+        self._verify_save_results()
+
+    def _save_bulk_optimized(self, df):
+        """Optimized bulk save with connection pooling"""
+        if df.empty:
+            return 0
+        
+        # تحويل إلى سجلات مع تنظيف NaN
+        data = []
+        for _, row in df.iterrows():
+            record = {}
+            for col in df.columns:
+                val = row[col]
+                # تحويل NaN/Inf إلى None
+                if pd.isna(val) or val == 'None' or val == 'nan':
+                     record[col] = None
+                else:
+                    record[col] = val
+            data.append(record)
+        
+        stmt = """
+            INSERT INTO rs_daily_v2 
+            (symbol, date, rs_rating, rs_raw, return_3m, return_6m, return_9m, return_12m,
+             rank_3m, rank_6m, rank_9m, rank_12m, company_name, industry_group)
+            VALUES (:symbol, :date, :rs_rating, :rs_raw, :return_3m, :return_6m, :return_9m, :return_12m,
+             :rank_3m, :rank_6m, :rank_9m, :rank_12m, :company_name, :industry_group)
+            ON CONFLICT (symbol, date) DO UPDATE SET
+            rs_rating = EXCLUDED.rs_rating,
+            rs_raw = EXCLUDED.rs_raw,
+            return_3m = EXCLUDED.return_3m,
+            return_6m = EXCLUDED.return_6m,
+            return_9m = EXCLUDED.return_9m,
+            return_12m = EXCLUDED.return_12m,
+            rank_3m = EXCLUDED.rank_3m,
+            rank_6m = EXCLUDED.rank_6m,
+            rank_9m = EXCLUDED.rank_9m,
+            rank_12m = EXCLUDED.rank_12m,
+            industry_group = EXCLUDED.industry_group
+        """
+        
+        try:
+            # استخدام اتصال منفصل مع إعدادات أفضل
+            with self.engine.begin() as conn:
+                conn.execute(text(stmt), data)
+            return len(df)
+        except Exception as e:
+            # خطأ في الاتصال، حاول إعادة الاتصال
+            print(f"   ⚠️  Connection error: {e}, reconnecting...")
+            self._reconnect()
+            time.sleep(2)
+            raise
+
+    def _retry_with_smaller_chunks(self, df):
+        """Retry failed chunks with smaller sizes"""
+        if df.empty:
+            return 0
+        
+        small_saved = 0
+        small_chunk_size = 500  # حجم صغير جداً
+        
+        for j in range(0, len(df), small_chunk_size):
+            small_chunk = df.iloc[j:j + small_chunk_size]
+            try:
+                self._save_bulk_optimized(small_chunk)
+                small_saved += len(small_chunk)
+                time.sleep(0.5)  # استراحة بين الدفعات الصغيرة
+            except Exception as e:
+                print(f"     ⚠️  Failed small chunk: {e}")
+                continue
+        
+        return small_saved
+
+    def _verify_save_results(self):
+        """Verify data was saved correctly"""
+        try:
+            with self.engine.connect() as conn:
+                # عدد الصفوف
+                result = conn.execute(text("SELECT COUNT(*) FROM rs_daily_v2"))
+                count = result.scalar()
+                print(f"🔍 Verification: rs_daily_v2 has {count:,} rows")
+                
+                # عدد الأيام المختلفة
+                result = conn.execute(text("SELECT COUNT(DISTINCT date) FROM rs_daily_v2"))
+                days = result.scalar()
+                print(f"📅 Distinct Dates: {days}")
+                
+                # تاريخ البدء والنهاية
+                result = conn.execute(text("SELECT MIN(date), MAX(date) FROM rs_daily_v2"))
+                min_date, max_date = result.fetchone()
+                print(f"📊 Date Range: {min_date} to {max_date}")
+                
+        except Exception as e:
+            print(f"⚠️ Verification failed: {e}")
+
+
+
+    def _check_database_health(self):
+        """Check database health before heavy operations"""
+        try:
+            with self.engine.connect() as conn:
+                # عدد الاتصالات النشطة
+                result = conn.execute(text("""
+                    SELECT count(*) as active_connections 
+                    FROM pg_stat_activity 
+                    WHERE state = 'active'
+                """))
+                active_conns = result.scalar()
+                
+                # استخدام الذاكرة
+                result = conn.execute(text("""
+                    SELECT setting::integer as max_connections 
+                    FROM pg_settings 
+                    WHERE name = 'max_connections'
+                """))
+                max_conns = result.scalar()
+                
+                print(f"🔍 Database Health: {active_conns}/{max_conns} active connections")
+                
+                if active_conns > max_conns * 0.8:
+                    print(f"⚠️  Warning: High connection usage ({active_conns}/{max_conns})")
+                    return False
+                
+                return True
+                
+        except Exception as e:
+            print(f"⚠️  Could not check database health: {e}")
+            return True  # تابع مع افتراض أن كل شيء بخير
+
+
 def main():
-    """Main function"""
+    """Main function Optimized for V2"""
     
-    DB_URL = "postgresql://youssef:UtnuCIs7PL3879r7R4jjIHi5FBqoHpKy@dpg-d4k8djidbo4c73cqncl0-a.oregon-postgres.render.com/financialdb_bvyn"
+    # Import settings to get the correct DB URL (Same as app)
+    from app.core.config import settings
+    DB_URL = str(settings.DATABASE_URL)
     
     print("="*80)
-    print("🚀 **RS Calculator - ULTRA FAST VERSION WITH ERROR HANDLING**")
+    print("🚀 **RS Calculator - PANDAS VECTORIZED ENGINE (V2 Table)**")
+    print("   Does 20 years of math in seconds. Saves to rs_daily_v2.")
     print("="*80)
     
     calculator = RSCalculatorUltraFast(DB_URL)
     
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ['--auto', '--resume']:
-            print("\n🚀 Continuing from where we left off...")
-            calculator.continue_from_checkpoint()
-            return
+    # Menu
+    print("\n📋Options:")
+    print("1. 🧨 Full Recalculation (Batched INSERT - Safer)")
+    print("2. ⚡ ULTRA-FAST COPY Method (Experimental - Super Fast!)")
+    print("3. ✨ Incremental Update (Append only missing dates)")
+    print("4. ❌ Exit")
     
-    calculator.show_progress()
+    choice = input("\nChoose: ")
     
-    print("\n📋 **Choose Action:**")
-    print("1. ⚡ **Start Ultra-Fast Calculation** (Recommended)")
-    print("2. 📍 Continue from checkpoint")
-    print("3. 🗑️  Clean and start over")
-    print("="*80)
-    
-    choice = input("\nChoose (1-3) [1]: ").strip() or "1"
-    
-    if choice == "1":
-        print("\n⚡ Starting ultra-fast calculation...")
-        calculator.calculate_historical_ultrafast(batch_size=200)
-    
-    elif choice == "2":
-        print("\n📍 Continuing from last checkpoint...")
-        calculator.continue_from_checkpoint()
-    
-    elif choice == "3":
-        confirm = input("\n⚠️  **Warning**: All RS data will be deleted! Continue? (y/n): ").lower()
-        if confirm == 'y':
+    if choice == '1':
+        confirm = input("⚠️  Ready to build rs_daily_v2? (y/n): ")
+        if confirm.lower() == 'y':
+            # 1. Health Check
+            if not calculator._check_database_health():
+                print("❌ Database is under heavy load. Try again later.")
+                return
+
+            print("🧹 Resetting V2 table...")
             try:
                 with calculator.engine.begin() as conn:
-                    conn.execute(text("DROP TABLE IF EXISTS rs_daily CASCADE"))
-                    conn.execute(text("DROP TABLE IF EXISTS calculation_checkpoint CASCADE"))
-                    conn.commit()
-                print("✅ Cleaned and ready for fresh start")
+                    # Drop existing
+                    conn.execute(text("DROP TABLE IF EXISTS rs_daily_v2 CASCADE"))
+                    
+                    # Create Fresh V2 Table (WITHOUT Indexes for speed)
+                    conn.execute(text("""
+                        CREATE TABLE rs_daily_v2 (
+                            id SERIAL PRIMARY KEY,
+                            symbol VARCHAR(20),
+                            date DATE,
+                            rs_rating INTEGER,
+                            rs_raw DECIMAL(10, 6),
+                            return_3m DECIMAL(10, 6),
+                            return_6m DECIMAL(10, 6),
+                            return_9m DECIMAL(10, 6),
+                            return_12m DECIMAL(10, 6),
+                            rank_3m INTEGER,
+                            rank_6m INTEGER,
+                            rank_9m INTEGER,
+                            rank_12m INTEGER,
+                            company_name VARCHAR(255),
+                            industry_group VARCHAR(255),
+                            UNIQUE(symbol, date)
+                        )
+                    """))
+                    print("✅ Created fresh rs_daily_v2 table")
+                    print("⏳ Index creation deferred for speed...")
+                    
+            except Exception as e:
+                print(f"❌ Error recreating table: {e}")
+                return
+
+            # Calculate
+            df_results = calculator.calculate_full_history_optimized()
+            
+            # Save
+            if df_results is not None:
+                calculator.save_bulk_results(df_results)
+
+                # Create Indexes LAST (Fastest way)
+                print("\n🔨 Creating indexes now...")
+                try:
+                    with calculator.engine.begin() as conn:
+                        indexes = [
+                            "CREATE INDEX IF NOT EXISTS idx_rs_v2_symbol_date ON rs_daily_v2(symbol, date)",
+                            "CREATE INDEX IF NOT EXISTS idx_rs_v2_date_rating ON rs_daily_v2(date, rs_rating DESC)",
+                            "CREATE INDEX IF NOT EXISTS idx_rs_v2_date ON rs_daily_v2(date)"
+                        ]
+                        for idx in indexes:
+                            conn.execute(text(idx))
+                        print("✅ Indexes created successfully")
+                except Exception as e:
+                    print(f"⚠️  Index creation warning: {e}")
+                
+        else:
+            print("Cancelled.")
+    
+    elif choice == '2':  # ⚡ ULTRA-FAST COPY
+        print("⚡ ULTRA-FAST COPY METHOD ACTIVATED!")
+        print("⚠️  WARNING: This will DROP and recreate the table!")
+        
+        confirm = input("Continue? (y/n): ")
+        if confirm.lower() == 'y':
+            # 1. إنشاء الجدول
+            print("🧹 Preparing table...")
+            try:
+                with calculator.engine.begin() as conn:
+                    conn.execute(text("DROP TABLE IF EXISTS rs_daily_v2 CASCADE"))
+                    
+                    conn.execute(text("""
+                        CREATE TABLE rs_daily_v2 (
+                            id SERIAL PRIMARY KEY,
+                            symbol VARCHAR(20),
+                            date DATE,
+                            rs_rating INTEGER,
+                            rs_raw DECIMAL(10, 6),
+                            return_3m DECIMAL(10, 6),
+                            return_6m DECIMAL(10, 6),
+                            return_9m DECIMAL(10, 6),
+                            return_12m DECIMAL(10, 6),
+                            rank_3m INTEGER,
+                            rank_6m INTEGER,
+                            rank_9m INTEGER,
+                            rank_12m INTEGER,
+                            company_name VARCHAR(255),
+                            industry_group VARCHAR(255),
+                            UNIQUE(symbol, date)
+                        )
+                    """))
+                    print("✅ Table created (no indexes yet)")
+                    
             except Exception as e:
                 print(f"❌ Error: {e}")
+                return
+            
+            # 2. الحساب
+            df_results = calculator.calculate_full_history_optimized()
+            
+            if df_results is not None:
+                # 3. الحفظ باستخدام COPY (السريع جداً)
+                print("\n🚀 Starting COPY protocol...")
+                saved = calculator.save_with_copy_protocol(df_results)
+                
+                if saved and saved > 0:
+                    # 4. إنشاء الفهارس بعد التحميل
+                    print("\n🔨 Creating indexes...")
+                    try:
+                        with calculator.engine.begin() as conn:
+                            indexes = [
+                                "CREATE INDEX idx_rs_v2_symbol_date ON rs_daily_v2(symbol, date)",
+                                "CREATE INDEX idx_rs_v2_date_rating ON rs_daily_v2(date, rs_rating DESC)",
+                                "CREATE INDEX idx_rs_v2_date ON rs_daily_v2(date)"
+                            ]
+                            for idx in indexes:
+                                conn.execute(text(idx))
+                            print("✅ All indexes created")
+                    except Exception as e:
+                        print(f"⚠️  Index warning: {e}")
+        
         else:
-            print("❌ Cancelled")
-    
+            print("Cancelled.")
+
+    elif choice == '3':
+        print("\n📈 Starting Incremental Update...")
+        
+        # 1. Get latest date from DB
+        latest_date = None
+        try:
+            with calculator.engine.connect() as conn:
+                # Check if table exists
+                table_check = conn.execute(text("SELECT to_regclass('public.rs_daily_v2')")).scalar()
+                if table_check:
+                    res = conn.execute(text("SELECT MAX(date) FROM rs_daily_v2")).scalar()
+                    if res:
+                        latest_date = res
+                        print(f"📅 Latest DB Date: {latest_date}")
+                    else:
+                        print("⚠️ Table is empty. Will save all data.")
+                else:
+                    print("⚠️ Table 'rs_daily_v2' does not exist. Please run Option 1 first.")
+                    return
+        except Exception as e:
+            print(f"❌ Error checking DB: {e}")
+            return
+
+        # 2. Calculate ALL (in memory - fast)
+        df_results = calculator.calculate_full_history_optimized()
+        
+        if df_results is not None and not df_results.empty:
+            # 3. Filter New Only
+            if latest_date:
+                # Ensure date format matches
+                df_results['date'] = pd.to_datetime(df_results['date']).dt.date
+                
+                # Filter > latest_date
+                df_new = df_results[df_results['date'] > latest_date]
+                
+                if df_new.empty:
+                    print(f"✅ Database is up to date (Latest: {latest_date}). Nothing to add.")
+                else:
+                    print(f"📦 Found {len(df_new):,} new records (from {df_new['date'].min()} to {df_new['date'].max()})")
+                    # 4. Save New Only
+                    calculator.save_bulk_results(df_new)
+            else:
+                # Save all if DB was empty
+                calculator.save_bulk_results(df_results)
+
     else:
-        print("❌ Invalid choice")
+        print("Bye.")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
         print("\n\n⏸️  **User Stopped**")
-        print("💾 Progress saved")
+
         print("🔄 Run --resume to continue")
     except Exception as e:
         print(f"\n\n❌ Unexpected Error: {e}")

@@ -7,7 +7,7 @@ class RSDaily(Base):
     جدول RS اليومي - Schema محدثة
     يخزن مؤشر القوة النسبية والرتب التفصيلية
     """
-    __tablename__ = "rs_daily"
+    __tablename__ = "rs_daily_v2"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     symbol = Column(String(20), nullable=False, index=True)
@@ -34,12 +34,13 @@ class RSDaily(Base):
     industry_group = Column(String(255))
     
     # Generated column for filtering (Optimized)
-    has_rating = Column(Boolean, default=False)
     
     # Indexes defined in DB directly via script, but we define them here for SQLAlchemy metadata
     __table_args__ = (
-        Index('idx_rs_daily_symbol_date', 'symbol', 'date', unique=True),
-        Index('idx_rs_daily_date_rating', 'date', text('rs_rating DESC')),
+        Index('idx_rs_daily_v2_symbol_date', 'symbol', 'date', unique=True),
+        Index('idx_rs_daily_v2_date_rating', 'date', text('rs_rating DESC')),
+        Index('idx_rs_daily_v2_date_rank_3m', 'date', text('rank_3m DESC')),
+        Index('idx_rs_daily_v2_date_rank_12m', 'date', text('rank_12m DESC'))
     )
     
     def __repr__(self):

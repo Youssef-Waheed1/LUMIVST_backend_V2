@@ -61,27 +61,31 @@ async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session
             source_url = item.get('url')
             if not source_url: continue # Skip if no url
 
-            # Check duplication again to be safe (or relied on filtered list passed in)
-            exists = db.query(CompanyOfficialFiling).filter(
-                CompanyOfficialFiling.source_url == source_url
-            ).first()
-            
-            if exists:
-                continue
+            # Loop duplication check removed as it was faulty (missing symbol check)
+            # and we trust the pre-filtering done in the route handler.
 
             try:
-                # Prepare S3 path: {symbol}/{year}/{category}_{period}.{ext}
-                # Clean strings
+                # Prepare data
                 year = item.get('year', 'Unknown')
                 period = item.get('period', 'Annual')
                 category = item.get('category_enum').value
-                ext = 'pdf' if item.get('file_type') == 'pdf' else 'xlsx'
+                
+                # Determine extension
+                local_path = item.get('local_path')
+                ext = 'pdf' # Default
+                
+                if item.get('file_type') == 'pdf':
+                    ext = 'pdf'
+                elif item.get('file_type') == 'excel':
+                    # Check local path for true extension
+                    if local_path and local_path.lower().endswith('.xls'):
+                        ext = 'xls'
+                    else:
+                        ext = 'xlsx'
                 
                 # Sanitize filename
                 filename = f"{period}_{category}".replace(" ", "_")
                 destination_path = f"{symbol}/{year}/{filename}.{ext}"
-
-                local_path = item.get('local_path')
                 
                 print(f"⬇️ Processing {filename} ({'Local' if local_path else 'Download'})...")
                 
@@ -142,9 +146,10 @@ async def ingest_official_reports(
         for item in items:
             if not item.url: continue
             
-            # Check if exists in DB by source URL
+            # Check if exists in DB by source URL AND company symbol
             exists = db.query(CompanyOfficialFiling).filter(
-                CompanyOfficialFiling.source_url == item.url
+                CompanyOfficialFiling.source_url == item.url,
+                CompanyOfficialFiling.company_symbol == payload.symbol
             ).first()
             
             if exists:

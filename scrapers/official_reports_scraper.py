@@ -130,8 +130,11 @@ class FinancialReportsScraper:
             
             # Construct filename
             ext = 'pdf'
-            if f_type == 'excel' or '.xls' in url.lower(): ext = 'xlsx'
-            elif '.pdf' in url.lower(): ext = 'pdf'
+            low_url = url.lower()
+            if f_type == 'excel' or '.xls' in low_url: 
+                ext = 'xlsx' if '.xlsx' in low_url else 'xls'
+            elif '.pdf' in low_url: 
+                ext = 'pdf'
             
             safe_period = period.replace(" ", "_").replace("/", "-")
             safe_section = section.replace(" ", "_").replace("/", "-")

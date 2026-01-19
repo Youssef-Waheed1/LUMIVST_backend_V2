@@ -39,27 +39,46 @@ def update_json_with_downloads(symbol):
             year = item.get('year', '')
             f_type = item.get('file_type', 'pdf')
             
-            ext = 'pdf'
-            if f_type == 'excel' or '.xls' in (url or '').lower(): ext = 'xlsx'
-            elif '.pdf' in (url or '').lower(): ext = 'pdf'
+            # Determine base extension logic
+            base_ext = 'pdf'
+            is_excel = False
+            if f_type == 'excel' or '.xls' in (url or '').lower(): 
+                base_ext = 'xlsx'
+                is_excel = True
+            elif '.pdf' in (url or '').lower(): 
+                base_ext = 'pdf'
             
             safe_period = period.replace(" ", "_").replace("/", "-")
             safe_section = section.replace(" ", "_").replace("/", "-")
             
-            filename = f"{year}_{safe_section}_{safe_period}.{ext}"
+            # Try primary extension
+            filename = f"{year}_{safe_section}_{safe_period}.{base_ext}"
             file_path = os.path.join(downloads_dir, filename)
             
+            # If Excel, check for alternative extension .xls if .xlsx missing
+            final_path = None
+            if os.path.exists(file_path):
+                final_path = file_path
+            elif is_excel:
+                # Try .xls
+                alt_filename = f"{year}_{safe_section}_{safe_period}.xls"
+                alt_path = os.path.join(downloads_dir, alt_filename)
+                if os.path.exists(alt_path):
+                    final_path = alt_path
+                    filename = alt_filename # Update filename for log
+
             # DEBUG
             print(f"Checking: {file_path}")
+            if final_path and final_path != file_path:
+                print(f"  ↪️ Found alternative: {final_path}")
             
-            if os.path.exists(file_path):
+            if final_path:
                 before = item.get('local_path')
-                item['local_path'] = file_path
-                if before != file_path:
+                item['local_path'] = final_path
+                if before != final_path:
                     print(f"  ✅ Linked {filename}")
                     updated_count += 1
             else:
-               # Try fuzzy matching or alternative naming?
                pass
                
     if updated_count > 0:

@@ -5,6 +5,7 @@ import traceback
 import json
 import logging
 import datetime
+import pandas as pd
 from datetime import date, timedelta
 from pathlib import Path
 from sqlalchemy import create_engine
@@ -21,7 +22,7 @@ from app.models.price import Price
 # استيراد الخدمات الجديدة
 from app.services.daily_detailed_scraper import scrape_daily_details
 # ✅ استخدام الـ Calculator النهائي
-from scripts.calculate_rs_final_precise import RSCalculatorFast
+from scripts.calculate_rs_final_precise import RSCalculatorUltraFast
 
 # إعداد الـ Logging
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +54,7 @@ def load_industry_mapping():
         
     return mapping
 
-def update_daily():
+def update_daily(target_date_str=None):
     """
     1. Scrape Daily Data
     2. Save to DB (with correct Industry Group)
@@ -68,9 +69,16 @@ def update_daily():
         # 0. Load Mappings
         industry_map = load_industry_mapping()
         
-        # 1. Scraping
+        # 1. Determine Date
+        if target_date_str:
+            market_date = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
+            logger.info(f"📅 User provided custom date: {market_date}")
+        else:
+            market_date = date.today()
+            logger.info(f"📅 Using today's date: {market_date}")
+
+        # 2. Scraping
         logger.info("📡 Scraping daily detailed report...")
-        # Scraper returns list of dicts: {'Symbol': '...', 'Close': ...}
         scraped_data = scrape_daily_details(headless=True)
         
         if not scraped_data:
@@ -79,16 +87,8 @@ def update_daily():
 
         logger.info(f"📊 Scraped {len(scraped_data)} records.")
         
-        # تحديد التاريخ (نفس اللوجيك بتاعك)
-        now = datetime.datetime.now()
-        market_date = date.today()
-        # لو قبل الساعة 3:30 (وقت إغلاق السوق + قليل)، ممكن نكون بنحدث امبارح؟
-        # بس الأصح نخليها دايمًا تاريخ اليوم، ولو البيانات لسة منزلتش السكرابر هيجيب القديم؟
-        # لأ، صفحة تداول بتتحدث يوميًا. هنفترض إننا بنشغل السكربت بعد الإغلاق.
-        
-        logger.info(f"📅 Setting market date to: {market_date}")
 
-        # 2. Saving Prices
+        # 3. Saving Prices
         success_count = 0
         for item in scraped_data:
             symbol = item.get("Symbol")
@@ -97,9 +97,6 @@ def update_daily():
             if not symbol: continue
 
             # Get Industry Group
-            # 1. Try from Scraper (unlikely for daily page)
-            # 2. Try from Mapping File (Static)
-            # 3. Fallback to "Unknown"
             industry = item.get("Industry Group") or item.get("Sector")
             if not industry:
                 industry = industry_map.get(str(symbol), "Unknown")
@@ -144,28 +141,48 @@ def update_daily():
                 continue
             
         db.commit()
-        logger.info(f"✅ Successfully saved/updated {success_count} price records.")
-
-        # 3. RS Calculation (Optimized Final)
+        logger.info(f"✅ Successfully saved/updated {success_count} price records for {market_date}.")
+        
+        # 4. RS Calculation (Optimized Final)
         # -------------------------------------------------------------------
-        logger.info("🧮 Starting RS Calculation (Incremental)...")
+        logger.info("🧮 Starting RS Calculation (Incremental Mode)...")
         
-        # Calculate RS just for the target date
-        calculator = RSCalculatorFast(str(settings.DATABASE_URL))
-        results = calculator.calculate_daily_rs(market_date)
+        # Use the UltraFast Vectorized Calculator
+        # calculate_full_history_optimized returns a DataFrame of ALL calcs
+        calculator = RSCalculatorUltraFast(str(settings.DATABASE_URL))
+        df_all_results = calculator.calculate_full_history_optimized()
         
-        # Save results
-        calculator.save_daily_results(results)
-        
-        logger.info(f"✅ Calculated and saved RS for {market_date}")
+        if df_all_results is not None and not df_all_results.empty:
+            # FILTER: Keep only records for the target market_date
+            # Ensure date column is properly typed for filtering
+            df_all_results['date'] = pd.to_datetime(df_all_results['date']).dt.date
+            
+            df_today = df_all_results[df_all_results['date'] == market_date]
+            
+            if not df_today.empty:
+                logger.info(f"💾 Saving {len(df_today)} RS records for {market_date}...")
+                
+                # SAVE (Append)
+                calculator.save_bulk_results(df_today)
+                logger.info(f"✅ Calculated and saved RS Data for {market_date}.")
+            else:
+                logger.warning(f"⚠️ No RS results found for {market_date}. Check if prices were saved correctly.")
+        else:
+             logger.error("❌ Calculation returned no results.")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 
     except Exception as e:
         logger.error(f"❌ Critical Error in Daily Update: {e}")
-        db.rollback()
+        # No rollback here for the scrape part as it was committed above
     finally:
         db.close()
 
 if __name__ == "__main__":
-    update_daily()
+    import argparse
+    parser = argparse.ArgumentParser(description='Run Daily Market Update')
+    parser.add_argument('--date', type=str, help='Target date in YYYY-MM-DD format (overrides today)')
+    
+    args = parser.parse_args()
+    
+    update_daily(args.date)
