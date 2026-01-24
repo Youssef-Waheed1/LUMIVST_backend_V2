@@ -13,6 +13,9 @@ class Price(Base):
     
     # معلومات السهم
     industry_group = Column(String(100))
+    sector = Column(String(100))
+    industry = Column(String(100))
+    sub_industry = Column(String(100))
     symbol = Column(String(10), nullable=False, index=True)
     company_name = Column(String(200))
     
@@ -31,6 +34,28 @@ class Price(Base):
     volume_traded = Column(BigInteger)
     value_traded_sar = Column(Numeric(18, 2))
     no_of_trades = Column(Integer)
+    
+    # Technical Indicators (Red Columns)
+    price_minus_sma_10 = Column(Numeric(12, 2))
+    price_minus_sma_21 = Column(Numeric(12, 2))
+    price_minus_sma_50 = Column(Numeric(12, 2))
+    price_minus_sma_150 = Column(Numeric(12, 2))
+    price_minus_sma_200 = Column(Numeric(12, 2))
+    
+    fifty_two_week_high = Column(Numeric(12, 2))
+    fifty_two_week_low = Column(Numeric(12, 2))
+    average_volume_50 = Column(BigInteger)
+    
+    # Technical Indicators (Percentages)
+    price_vs_sma_10_percent = Column(Numeric(8, 2))
+    price_vs_sma_21_percent = Column(Numeric(8, 2))
+    price_vs_sma_50_percent = Column(Numeric(8, 2))
+    price_vs_sma_150_percent = Column(Numeric(8, 2))
+    price_vs_sma_200_percent = Column(Numeric(8, 2))
+    
+    percent_off_52w_high = Column(Numeric(8, 2))
+    percent_off_52w_low = Column(Numeric(8, 2))
+    vol_diff_50_percent = Column(Numeric(8, 2))
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

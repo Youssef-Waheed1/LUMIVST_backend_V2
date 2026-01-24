@@ -4,12 +4,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import update
 
 # ⭐ استيرادات واضحة
-from app.services.cache.stock_cache import stock_cache, clean_symbol
+
 from app.services.rs_rating import calculate_all_rs_ratings
 from app.core.redis import redis_cache
 from app.core.database import get_db
-from app.models.profile import CompanyProfile
-from app.models.quote import StockQuote
+
 
 router = APIRouter(prefix="/stocks", tags=["Tadawul Stocks"])
 

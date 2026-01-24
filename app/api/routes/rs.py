@@ -46,7 +46,7 @@ async def get_latest_rs(
         
         return RSLatestResponse(
             data=results,
-            total_count=len(results), # This isn't accurate for pagination but fine for simple limit
+            total_count=len(results),
             date=latest_date
         )
     except Exception as e:

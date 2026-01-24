@@ -1,12 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, statistics, technical_indicators, auth, contact, rs, rs_v2, admin, scraper, official_filings, financial_details
+from app.api.routes import stocks, financials, cache, auth, contact, rs, rs_v2, admin, scraper, official_filings, financial_details, prices
 
 # ... (Previous code)
 
 from app.core.redis import redis_cache
 from app.core.database import create_tables
-from app.services.cache.stock_cache import SAUDI_STOCKS
 from app.services.rs_rating import calculate_all_rs_ratings
 import asyncio
 from app.core.config import settings 
@@ -84,14 +83,14 @@ protected_dependencies = [Depends(verify_token)]
 app.include_router(stocks.router, dependencies=protected_dependencies)
 app.include_router(financials.router, dependencies=protected_dependencies)
 app.include_router(cache.router, dependencies=protected_dependencies)
-app.include_router(statistics.router, dependencies=protected_dependencies)
-app.include_router(technical_indicators.router, dependencies=protected_dependencies)
-app.include_router(rs.router, prefix="/api", dependencies=protected_dependencies)
+
+app.include_router(rs.router, prefix="/api", dependencies=protected_dependencies)  # RS V1 endpoints
 app.include_router(rs_v2.router, prefix="/api", dependencies=protected_dependencies)  # RS V2 endpoints
 app.include_router(admin.router, prefix="/api", dependencies=protected_dependencies) # /api/admin/*
 app.include_router(scraper.router)  # /api/scraper/*
 app.include_router(official_filings.router, prefix="/api") # /api/ingest/official-reports & /api/reports/{symbol}
 app.include_router(financial_details.router, prefix="/api/financial-details", tags=["Financial Details"])
+app.include_router(prices.router, prefix="/api") # /api/prices/latest
 
 # Event handlers
 @app.on_event("startup")
@@ -136,7 +135,7 @@ async def startup_event():
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = AsyncIOScheduler()
     
-    @scheduler.scheduled_job('cron', hour=13, minute=0) # 13:00 UTC = 17:00 UAE Time
+    @scheduler.scheduled_job('cron', day_of_week='0-3,6', hour=17, minute=0)  # Sun-Thu at 17:00 UTC (20:00 Riyadh)
     async def daily_rs_update():
         from scripts.daily_market_update import update_daily
         print("🔄 Running daily RS update (Scraper V2 + RS V2)...")

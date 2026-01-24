@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
-from app.services.twelve_data.time_series_service import fetch_time_series
+
 
 # الفترات المطلوبة (أيام التداول الفعلية)
 PERIODS = {

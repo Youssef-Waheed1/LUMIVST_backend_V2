@@ -31,26 +31,29 @@ logger = logging.getLogger(__name__)
 # مسار المشروع والملفات
 project_root = Path(__file__).resolve().parent.parent.parent
 
-def load_industry_mapping():
+def load_full_hierarchy_mapping():
     """
-    تحميل ملف الربط بين الرموز والقطاعات
+    تحميل الربط الكامل من ملف new.csv
     """
     mapping = {}
-    json_path = project_root / "backend" / "industry_mapping.json"
+    csv_path = project_root / "new.csv"
     
-    # Try different paths just in case
-    if not json_path.exists():
-         json_path = project_root / "industry_mapping.json"
-         
     try:
-        if json_path.exists():
-            with open(json_path, 'r', encoding='utf-8') as f:
-                mapping = json.load(f)
-            logger.info(f"Loaded {len(mapping)} industry mappings.")
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
+            for _, row in df.iterrows():
+                symbol = str(row['Symbol'])
+                mapping[symbol] = {
+                    "industry_group": row.get('Industry Group'),
+                    "sector": row.get('Sector'),
+                    "industry": row.get('Industry'),
+                    "sub_industry": row.get('Sub-Industry')
+                }
+            logger.info(f"Loaded {len(mapping)} symbols with full hierarchy from new.csv.")
         else:
-            logger.warning("⚠️ Industry mapping file not found. New stocks might miss industry info.")
+            logger.warning("⚠️ new.csv not found at project root.")
     except Exception as e:
-        logger.error(f"❌ Error loading industry mapping: {e}")
+        logger.error(f"❌ Error loading hierarchy mapping: {e}")
         
     return mapping
 
@@ -67,7 +70,7 @@ def update_daily(target_date_str=None):
         logger.info(f"🚀 Starting Daily Market Update...")
         
         # 0. Load Mappings
-        industry_map = load_industry_mapping()
+        hierarchy_map = load_full_hierarchy_mapping()
         
         # 1. Determine Date
         if target_date_str:
@@ -91,16 +94,14 @@ def update_daily(target_date_str=None):
         # 3. Saving Prices
         success_count = 0
         for item in scraped_data:
-            symbol = item.get("Symbol")
+            symbol = str(item.get("Symbol"))
             company = item.get("Company")
             
             if not symbol: continue
 
-            # Get Industry Group
-            industry = item.get("Industry Group") or item.get("Sector")
-            if not industry:
-                industry = industry_map.get(str(symbol), "Unknown")
-
+            # Get Detailed Hierarchy
+            h = hierarchy_map.get(symbol, {})
+            
             try:
                 price_data = {
                     "symbol": symbol,
@@ -113,8 +114,12 @@ def update_daily(target_date_str=None):
                     "change_percent": item.get("Change %", 0.0),
                     "volume_traded": int(item.get("Volume Traded", 0)),
                     "value_traded_sar": float(item.get("Value Traded", 0.0)),
+                    "no_of_trades": int(item.get("No. of Trades", 0)),
                     "company_name": company,
-                    "industry_group": industry  # ✅ Added Industry
+                    "industry_group": h.get("industry_group"),
+                    "sector": h.get("sector"),
+                    "industry": h.get("industry"),
+                    "sub_industry": h.get("sub_industry")
                 }
                 
                 # Upsert
@@ -130,8 +135,12 @@ def update_daily(target_date_str=None):
                         "change_percent": stmt.excluded.change_percent,
                         "volume_traded": stmt.excluded.volume_traded,
                         "value_traded_sar": stmt.excluded.value_traded_sar,
+                        "no_of_trades": stmt.excluded.no_of_trades,
                         "company_name": stmt.excluded.company_name,
-                        "industry_group": stmt.excluded.industry_group
+                        "industry_group": stmt.excluded.industry_group,
+                        "sector": stmt.excluded.sector,
+                        "industry": stmt.excluded.industry,
+                        "sub_industry": stmt.excluded.sub_industry
                     }
                 )
                 db.execute(stmt)
@@ -169,6 +178,16 @@ def update_daily(target_date_str=None):
                 logger.warning(f"⚠️ No RS results found for {market_date}. Check if prices were saved correctly.")
         else:
              logger.error("❌ Calculation returned no results.")
+             
+        # 5. Calculate Technical Indicators
+        # -------------------------------------------------------------------
+        logger.info("🧮 Calculating Technical Indicators (SMAs, 52W High/Low)...")
+        from scripts.calculate_technicals import TechnicalCalculator
+        tech_calc = TechnicalCalculator(str(settings.DATABASE_URL))
+        df_tech = tech_calc.load_data()
+        df_tech_res = tech_calc.calculate(df_tech)
+        tech_calc.save_latest(df_tech_res)
+        logger.info("✅ Technical Indicators Updated.")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 

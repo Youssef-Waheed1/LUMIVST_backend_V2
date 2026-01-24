@@ -4,7 +4,6 @@ from typing import List
 from datetime import datetime
 
 from app.core.database import get_db
-from app.services.cache.stock_cache import stock_cache 
 from app.models.user import User
 from app.schemas.auth import UserResponse
 from app.api.deps import get_current_admin

@@ -27,46 +27,45 @@ def clean_key(text):
     return clean
 
 def parse_excel_file(file_path):
-    """Parses a single XBRL Excel file and returns a dict of metrics."""
+    """Parses a single XBRL Excel file and returns a LIST of metrics to preserve order and duplicates."""
     try:
         # Read Excel - Column 0 is Label, Column 1 is Current Value
-        df = pd.read_excel(file_path, header=None)
+        # fillna('') ensures we don't drop empty cells immediately
+        df = pd.read_excel(file_path, header=None).fillna('')
         
-        data = {}
-        
-        # Iterate rows
-        # We start from row 7 based on inspection (skipping headers)
-        start_row = 0
+        data = []
         
         for index, row in df.iterrows():
-            label = row[0]
-            value = row[1]
+            label = str(row[0]).strip()
+            raw_value = row[1]
             
-            if pd.isna(label): continue
+            # Skip completely empty rows (if both label and value are empty)
+            if not label and (raw_value == '' or pd.isna(raw_value)):
+                continue
             
-            # Clean label
-            key = clean_key(str(label))
-            
-            if not key or len(key) < 2: continue
+            # Generate key for reference, but we won't use it for uniqueness
+            key = clean_key(label)
             
             # Value handling
-            if pd.isna(value): 
-                val = None
-            else:
+            val = None
+            if raw_value is not None and raw_value != '':
                 try:
-                    val = float(value)
+                    val = float(raw_value)
                 except:
-                    val = str(value).strip()
+                    val = str(raw_value).strip()
             
-            data[key] = {
-                "label": str(label).strip(),
-                "value": val
-            }
+            # Append everything, even if val is None
+            data.append({
+                "row_id": index + 1,       # Preserve Excel row number
+                "key": key,                # Snake_case key for searching
+                "label": label,            # Original Display Label
+                "value": val               # The value (or None)
+            })
             
         return data
     except Exception as e:
         print(f"❌ Error reading {file_path}: {e}")
-        return {}
+        return []
 
 def extract_for_symbol(symbol):
     base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "downloads", str(symbol))

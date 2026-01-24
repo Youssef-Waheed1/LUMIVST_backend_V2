@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from app.core.redis import redis_cache
-from app.services.cache.stock_cache import stock_cache
-from app.services.cache.financial_cache import financial_cache
+
 import asyncio
 
 router = APIRouter(prefix="/cache", tags=["Cache Management"])
