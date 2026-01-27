@@ -133,9 +133,10 @@ async def startup_event():
         print("✅ Redis cache initialized successfully")
     
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    scheduler = AsyncIOScheduler()
+    from pytz import UTC
+    scheduler = AsyncIOScheduler(timezone=UTC)
     
-    @scheduler.scheduled_job('cron', day_of_week='0-3,6', hour=17, minute=0)  # Sun-Thu at 17:00 UTC (20:00 Riyadh)
+    @scheduler.scheduled_job('cron', day_of_week='0-3,6', hour=17, minute=0, timezone=UTC)  # Sun-Thu at 17:00 UTC (19:00 Egypt, 20:00 Riyadh)
     async def daily_rs_update():
         from scripts.daily_market_update import update_daily
         print("🔄 Running daily RS update (Scraper V2 + RS V2)...")

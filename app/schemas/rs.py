@@ -13,6 +13,7 @@ class RSResponse(BaseModel):
     
     # RS Score
     rs_rating: Optional[int] = None
+    prev_rs_rating: Optional[int] = None
     rs_raw: Optional[float] = None
     
     # Returns

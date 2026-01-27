@@ -27,6 +27,13 @@ class RSV2Item(BaseModel):
     rank_12m: Optional[int] = None
     company_name: Optional[str] = None
     industry_group: Optional[str] = None
+    
+    # New IBD Metrics
+    sector_rs_rating: Optional[str] = None
+    industry_group_rs_rating: Optional[str] = None
+    industry_rs_rating: Optional[str] = None
+    sub_industry_rs_rating: Optional[str] = None
+    acc_dis_rating: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -73,7 +80,8 @@ async def get_latest_rs_v2(
             SELECT symbol, date, rs_rating, rs_raw, 
                    return_3m, return_6m, return_9m, return_12m,
                    rank_3m, rank_6m, rank_9m, rank_12m,
-                   company_name, industry_group
+                   company_name, industry_group,
+                   sector_rs_rating, industry_group_rs_rating, industry_rs_rating, sub_industry_rs_rating, acc_dis_rating
             FROM rs_daily_v2
             WHERE date = :latest_date
         """
@@ -112,7 +120,12 @@ async def get_latest_rs_v2(
             rank_9m=row[10],
             rank_12m=row[11],
             company_name=row[12],
-            industry_group=row[13]
+            industry_group=row[13],
+            sector_rs_rating=row[14],
+            industry_group_rs_rating=row[15],
+            industry_rs_rating=row[16],
+            sub_industry_rs_rating=row[17],
+            acc_dis_rating=row[18]
         ) for row in rows]
         
         # Get total count
@@ -145,7 +158,8 @@ async def get_rs_history_v2(
         query = """
             SELECT date, rs_rating, rs_raw, 
                    return_3m, return_6m, return_9m, return_12m,
-                   rank_3m, rank_6m, rank_9m, rank_12m
+                   rank_3m, rank_6m, rank_9m, rank_12m,
+                   sector_rs_rating, industry_group_rs_rating, acc_dis_rating
             FROM rs_daily_v2
             WHERE symbol = :symbol
         """
@@ -176,7 +190,10 @@ async def get_rs_history_v2(
             "rank_3m": row[7],
             "rank_6m": row[8],
             "rank_9m": row[9],
-            "rank_12m": row[10]
+            "rank_12m": row[10],
+            "sector_rs_rating": row[11],
+            "industry_group_rs_rating": row[12],
+            "acc_dis_rating": row[13]
         } for row in rows]
         
         return {"symbol": symbol, "data": data, "count": len(data)}

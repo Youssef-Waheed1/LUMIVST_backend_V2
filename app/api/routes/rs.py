@@ -21,18 +21,25 @@ async def get_latest_rs(
     db: Session = Depends(get_db)
 ):
     """
-    الحصول على آخر RS Rating لكل الأسهم.
+    الحصول على آخر RS Rating لكل الأسهم مع التقييم السابق.
     """
     try:
-        # 1. معرفة آخر تاريخ متاح
-        latest_date_row = db.query(RSDaily.date).order_by(desc(RSDaily.date)).first()
+        # 1. معرفة آخر تاريخين متاحين
+        dates_row = db.query(RSDaily.date).distinct().order_by(desc(RSDaily.date)).limit(2).all()
         
-        if not latest_date_row:
+        if not dates_row:
             return RSLatestResponse(data=[], total_count=0, date=date.today())
         
-        latest_date = latest_date_row[0]
+        latest_date = dates_row[0][0]
+        prev_date = dates_row[1][0] if len(dates_row) > 1 else None
         
-        # 2. بناء الاستعلام
+        # 2. الحصول على التقييمات السابقة (إذا وجدت)
+        prev_ratings = {}
+        if prev_date:
+            prev_results = db.query(RSDaily.symbol, RSDaily.rs_rating).filter(RSDaily.date == prev_date).all()
+            prev_ratings = {r.symbol: r.rs_rating for r in prev_results}
+        
+        # 3. بناء الاستعلام للبيانات الحالية
         query = db.query(RSDaily).filter(RSDaily.date == latest_date)
         
         if min_rs is not None:
@@ -43,6 +50,10 @@ async def get_latest_rs(
         
         # تنفيذ الاستعلام مع الحد الأقصى
         results = query.limit(limit).all()
+        
+        # 4. دمج التقييمات السابقة
+        for r in results:
+            r.prev_rs_rating = prev_ratings.get(r.symbol)
         
         return RSLatestResponse(
             data=results,

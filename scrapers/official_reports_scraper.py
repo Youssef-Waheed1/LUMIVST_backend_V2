@@ -147,40 +147,45 @@ class FinancialReportsScraper:
             
             print(f"      ⬇️ Downloading {filename}...")
             
-            # Open new page
-            page = await self.context.new_page()
-            
-            try:
-                # 1. Go to the domain root to establish context (Cookies/Origin)
-                # Using a lightweight page on the same domain
-                await page.goto("https://www.saudiexchange.sa/wps/portal/saudiexchange/home", wait_until="domcontentloaded", timeout=60000)
-                
-                # 2. Setup Listener
-                async with page.expect_download(timeout=60000) as download_info:
-                    # 3. Inject JS to force download
-                    await page.evaluate(f"""(url) => {{
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.setAttribute('download', 'file'); // Attribute to force download instead of view
-                        a.target = '_self'; 
-                        document.body.appendChild(a);
-                        a.click();
-                    }}""", url)
-
-                download = await download_info.value
-                await download.save_as(file_path)
-                
-                if os.path.getsize(file_path) < 100:
-                    print(f"      ⚠️ Warning: File too small.")
-                    return None
+            # Retry download logic
+            for attempt in range(2):
+                page = await self.context.new_page()
+                try:
+                    # 1. Go to the domain root to establish context (Cookies/Origin)
+                    await page.goto("https://www.saudiexchange.sa/wps/portal/saudiexchange/home", 
+                                  wait_until="domcontentloaded", 
+                                  timeout=90000) # Increased timeout
                     
-                return file_path
-                
-            except Exception as e:
-                print(f"      ❌ Download failed: {e}")
-                return None
-            finally:
-                await page.close()
+                    # 2. Setup Listener
+                    async with page.expect_download(timeout=120000) as download_info: # Increased wait for download start
+                        # 3. Inject JS to force download
+                        await page.evaluate(f"""(url) => {{
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.setAttribute('download', 'file'); 
+                            a.target = '_self'; 
+                            document.body.appendChild(a);
+                            a.click();
+                        }}""", url)
+
+                    download = await download_info.value
+                    await download.save_as(file_path)
+                    
+                    if os.path.exists(file_path) and os.path.getsize(file_path) > 100:
+                        return file_path
+                    else:
+                        print(f"      ⚠️ Attempt {attempt+1}: File too small or missing.")
+                        
+                except Exception as e:
+                    print(f"      ⚠️ Attempt {attempt+1} failed: {e}")
+                    if attempt == 1: # Last attempt
+                        print(f"      ❌ Final Download Failure for {filename}")
+                        return None
+                    await asyncio.sleep(2) # Wait before retry
+                finally:
+                    await page.close()
+            
+            return None
 
         except Exception as e:
             print(f"      ❌ General download error: {e}")

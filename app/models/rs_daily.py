@@ -17,6 +17,15 @@ class RSDaily(Base):
     rs_rating = Column(Integer)               # RS Rating (1-99)
     rs_raw = Column(Numeric(10, 6))           # القيمة الخام
     
+    # تصنيفات المجموعات (IBD Style Letter Ratings A+ to E)
+    sector_rs_rating = Column(String(5))         # Sector Rating
+    industry_group_rs_rating = Column(String(5)) # Industry Group Rating
+    industry_rs_rating = Column(String(5))       # Industry Rating
+    sub_industry_rs_rating = Column(String(5))   # Sub-Industry Rating
+    
+    # التجميع/التصريف
+    acc_dis_rating = Column(String(5))           # Accumulation/Distribution Rating (A-E)
+    
     # العوائد
     return_3m = Column(Numeric(10, 6))
     return_6m = Column(Numeric(10, 6))

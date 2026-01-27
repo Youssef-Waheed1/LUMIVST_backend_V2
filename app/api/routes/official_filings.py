@@ -59,7 +59,9 @@ async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session
         
         for item in items:
             source_url = item.get('url')
-            if not source_url: continue # Skip if no url
+            local_path = item.get('local_path')
+            
+            if not source_url and not local_path: continue # Skip if neither exist
 
             # Loop duplication check removed as it was faulty (missing symbol check)
             # and we trust the pre-filtering done in the route handler.
@@ -93,9 +95,12 @@ async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session
                 if local_path and os.path.exists(local_path):
                      mime = 'application/pdf' if ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                      public_url = await storage_service.upload_local_file(local_path, destination_path, mime)
-                else:
+                elif source_url:
                      # Fallback to download
                      public_url = await storage_service.upload_file_from_url(source_url, destination_path)
+                else:
+                    print(f"⚠️  Skipping {filename}: No local path and no URL")
+                    continue
                      
                 print(f"✅ Uploaded to {public_url}")
 
@@ -144,13 +149,28 @@ async def ingest_official_reports(
             continue # Skip unknown categories
         
         for item in items:
-            if not item.url: continue
+            # Allow if URL exists OR local path exists
+            if not item.url and not item.local_path: 
+                continue
             
-            # Check if exists in DB by source URL AND company symbol
-            exists = db.query(CompanyOfficialFiling).filter(
-                CompanyOfficialFiling.source_url == item.url,
-                CompanyOfficialFiling.company_symbol == payload.symbol
-            ).first()
+            # Check if exists in DB
+            # If URL exists, check by URL
+            exists = None
+            if item.url:
+                exists = db.query(CompanyOfficialFiling).filter(
+                    CompanyOfficialFiling.source_url == item.url,
+                    CompanyOfficialFiling.company_symbol == payload.symbol
+                ).first()
+            elif item.local_path:
+                # If no URL, check by Year/Period/Category to avoid duplicates
+                per_enum_check = map_period(item.period)
+                cat_enum_check = map_category(category_name)
+                exists = db.query(CompanyOfficialFiling).filter(
+                    CompanyOfficialFiling.company_symbol == payload.symbol,
+                    CompanyOfficialFiling.year == item.year,
+                    CompanyOfficialFiling.period == per_enum_check,
+                    CompanyOfficialFiling.category == cat_enum_check
+                ).first()
             
             if exists:
                 continue
