@@ -91,6 +91,8 @@ app.include_router(scraper.router)  # /api/scraper/*
 app.include_router(official_filings.router, prefix="/api") # /api/ingest/official-reports & /api/reports/{symbol}
 app.include_router(financial_details.router, prefix="/api/financial-details", tags=["Financial Details"])
 app.include_router(prices.router, prefix="/api") # /api/prices/latest
+from app.api.routes import industry_groups
+app.include_router(industry_groups.router, prefix="/api/industry-groups", tags=["Industry Groups"])
 
 # Event handlers
 @app.on_event("startup")

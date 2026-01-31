@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sys
 import argparse
 from typing import Dict, List, Any
 from playwright.async_api import async_playwright, Page, Locator
@@ -351,24 +352,80 @@ class FinancialReportsScraper:
         return reports_data
 
 async def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--symbol', type=str, default="4322", help="Company symbol to scrape")
+    # Setup argument parser to accept multiple symbols
+    parser = argparse.ArgumentParser(description="Scrape, Generate JSON, and Ingest Financial Reports.")
+    parser.add_argument('symbols', nargs='*', help="List of company symbols to process (e.g. 2250 4322)")
+    parser.add_argument('--symbol', help="Single symbol (legacy support)")
+    
     args = parser.parse_args()
     
-    scraper = FinancialReportsScraper(symbol=args.symbol, headless=False)
-    data = await scraper.scrape()
+    # Determine list of symbols
+    raw_symbols = []
+    if args.symbols:
+        raw_symbols.extend(args.symbols)
+    if args.symbol:
+        raw_symbols.append(args.symbol)
     
-    # Save to independent 'data' directory in backend
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(script_dir, "..", "data")
-    os.makedirs(data_dir, exist_ok=True)
-    
-    output_file = os.path.join(data_dir, "scrape_financial_reports.json")
-    
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    if not raw_symbols:
+        raw_symbols = ["4322"]
+
+    # Process symbols to handle commas (e.g., "2284,2200")
+    target_symbols = []
+    for item in raw_symbols:
+        # Split by comma if present, strip whitespace
+        cleaned = [s.strip() for s in item.split(',') if s.strip()]
+        target_symbols.extend(cleaned)
+
+    # Import helper scripts dynamically
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        scripts_dir = os.path.abspath(os.path.join(current_dir, "..", "scripts"))
+        if scripts_dir not in sys.path:
+            sys.path.append(scripts_dir)
+            
+        from generate_json_from_local import generate_json_from_local
+        from ingest_reports import ingest_data
+    except ImportError as e:
+        print(f"❌ Error importing helper scripts: {e}")
+        print("Make sure 'generate_json_from_local.py' and 'ingest_reports.py' exist in backend/scripts/")
+        return
+
+    print(f"🚀 Starting automation for {len(target_symbols)} symbols: {target_symbols}")
+
+    for idx, sym in enumerate(target_symbols):
+        print(f"\n{'='*50}")
+        print(f"🔄 [{idx+1}/{len(target_symbols)}] Processing Symbol: {sym}")
+        print(f"{'='*50}")
         
-    print(f"\nReports scraping complete. Data saved to {output_file}")
+        # --- passo 1: Scrape & Download ---
+        print(f"📡 1. Starting Scraper for {sym}...")
+        scraper = FinancialReportsScraper(symbol=str(sym), headless=False) # Headless False as per original
+        # The scrape method downloads the files internally
+        await scraper.scrape()
+        
+        # --- Paso 2: Generate JSON from Local Files ---
+        print(f"\n📝 2. Generating JSON from downloaded files for {sym}...")
+        try:
+            # Synchronous call to the imported script function
+            generate_json_from_local(str(sym))
+        except Exception as e:
+            print(f"❌ Failed to generate JSON for {sym}: {e}")
+            continue # Skip ingestion if JSON generation fails
+            
+        # --- Step 3: Ingest Reports ---
+        print(f"\n📨 3. Ingesting data for {sym}...")
+        try:
+            # Synchronous call to the imported script function
+            ingest_data(str(sym))
+        except Exception as e:
+            print(f"❌ Failed to ingest data for {sym}: {e}")
+            
+        # --- Step 4: Wait ---
+        if idx < len(target_symbols) - 1:
+            print(f"\n⏳ Waiting 5 seconds before next symbol...")
+            await asyncio.sleep(5)
+
+    print(f"\n✅ All {len(target_symbols)} symbols processed successfully.")
 
 if __name__ == "__main__":
     asyncio.run(main())

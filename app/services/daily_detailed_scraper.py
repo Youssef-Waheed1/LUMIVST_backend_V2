@@ -8,6 +8,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
 import logging
+import os
 
 # إعداد الـ Logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 def build_driver(headless=True):
     """
     إعداد متصفح كروم بنفس إعدادات السكريبت القديم
+    مع دعم Render deployment
     """
     options = Options()
     if headless:
@@ -23,9 +25,29 @@ def build_driver(headless=True):
     
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    # Check for Chrome binary from environment variable (for Render)
+    chrome_bin = os.environ.get('CHROME_BIN') or os.environ.get('GOOGLE_CHROME_BIN')
+    if chrome_bin:
+        logger.info(f"📍 Using Chrome binary from env: {chrome_bin}")
+        options.binary_location = chrome_bin
+    else:
+        # Try common paths on Linux (Render)
+        linux_chrome_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+        ]
+        for path in linux_chrome_paths:
+            if os.path.exists(path):
+                logger.info(f"📍 Found Chrome at: {path}")
+                options.binary_location = path
+                break
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
