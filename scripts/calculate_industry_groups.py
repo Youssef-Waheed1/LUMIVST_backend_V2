@@ -41,7 +41,7 @@ class IndustryGroupCalculator:
         
         # Using pandas for ease of aggregation
         query_prices = text("""
-            SELECT DISTINCT ON (symbol) symbol, date, close, industry_group, sector
+            SELECT DISTINCT ON (symbol) symbol, date, close, industry_group, sector, market_cap
             FROM prices
             WHERE date <= :target_date
             ORDER BY symbol, date DESC
@@ -70,7 +70,6 @@ class IndustryGroupCalculator:
 
         # Merge All
         df = pd.merge(df_prices, df_ytd, on='symbol', how='left')
-        # df = pd.merge(df, df_shares, on='symbol', how='left') # Skipped as requested
         
         return df
 
@@ -78,8 +77,10 @@ class IndustryGroupCalculator:
         """
         Calculate metrics per stock then aggregate
         """
-        # Calculate Market Cap (SKIP)
-        df['market_cap_bil'] = 0.0
+        # Calculate Market Cap (Convert to Billions)
+        # Handle missing market caps
+        df['market_cap'] = df['market_cap'].fillna(0.0)
+        df['market_cap_bil'] = df['market_cap'] / 1_000_000_000.0
         
         # Calculate YTD Change %
         df['ytd_change'] = (df['close'] - df['close_ytd_start']) / df['close_ytd_start'] * 100
@@ -91,7 +92,7 @@ class IndustryGroupCalculator:
         # Aggregation Logic
         summary = grp_df.groupby('industry_group').agg({
             'symbol': 'count', # Number of stocks
-            'market_cap_bil': 'sum', # Total Val
+            'market_cap_bil': 'sum', # Total Val in Billions
             'ytd_change': 'mean', # Avg % Chg YTD
             'sector': 'first' # Just take one
         }).reset_index()
@@ -202,7 +203,7 @@ def main():
         # Generate weekly dates for last 6 months
         today = date.today()
         current = today
-        start = today - timedelta(days=180)
+        start = today - timedelta(days=365)
         while current >= start:
             dates_to_process.append(current)
             current -= timedelta(weeks=1)

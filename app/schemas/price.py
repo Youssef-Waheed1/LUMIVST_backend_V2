@@ -20,6 +20,7 @@ class PriceResponse(BaseModel):
     volume_traded: Optional[int] = None
     value_traded_sar: Optional[Decimal] = None
     no_of_trades: Optional[int] = None
+    market_cap: Optional[Decimal] = None
     
     # Technical Indicators
     price_minus_sma_10: Optional[Decimal] = None

@@ -34,6 +34,7 @@ class Price(Base):
     volume_traded = Column(BigInteger)
     value_traded_sar = Column(Numeric(18, 2))
     no_of_trades = Column(Integer)
+    market_cap = Column(Numeric(20, 2))
     
     # Technical Indicators (Red Columns)
     price_minus_sma_10 = Column(Numeric(12, 2))

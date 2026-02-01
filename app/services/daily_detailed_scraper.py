@@ -126,8 +126,8 @@ def scrape_daily_details(headless=True):
         for i, row in enumerate(rows):
             cols = row.find_elements(By.TAG_NAME, "td")
             
-            # تجاهل الصفوف القصيرة أو الفواصل
-            if len(cols) < 5: 
+            # Check if row has enough columns (at least 11 for Market Cap)
+            if len(cols) < 11: 
                 continue
             
             try:
@@ -149,7 +149,8 @@ def scrape_daily_details(headless=True):
                         "Change %": clean_number(cols[6].text),
                         "Volume Traded": clean_number(cols[7].text),
                         "Value Traded": clean_number(cols[8].text),
-                        "No. of Trades": clean_number(cols[9].text)
+                        "No. of Trades": clean_number(cols[9].text),
+                        "Market Cap": clean_number(cols[10].text)
                     }
                     data.append(entry)
                     

@@ -2,7 +2,7 @@
     "Financial Statements": [
         {
             "url": "http://internal/2021_Financial_Statements_Annual.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_Financial_Statements_Annual.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_Financial_Statements_Annual.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2021",
@@ -10,7 +10,7 @@
         },
         {
             "url": "http://internal/2021_Financial_Statements_Q1.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_Financial_Statements_Q1.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_Financial_Statements_Q1.pdf",
             "file_type": "pdf",
             "period": "Q1",
             "year": "2021",
@@ -18,7 +18,7 @@
         },
         {
             "url": "http://internal/2021_Financial_Statements_Q2.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_Financial_Statements_Q2.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_Financial_Statements_Q2.pdf",
             "file_type": "pdf",
             "period": "Q2",
             "year": "2021",
@@ -26,7 +26,7 @@
         },
         {
             "url": "http://internal/2021_Financial_Statements_Q3.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_Financial_Statements_Q3.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_Financial_Statements_Q3.pdf",
             "file_type": "pdf",
             "period": "Q3",
             "year": "2021",
@@ -34,7 +34,7 @@
         },
         {
             "url": "http://internal/2022_Financial_Statements_Annual.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_Financial_Statements_Annual.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_Financial_Statements_Annual.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2022",
@@ -42,7 +42,7 @@
         },
         {
             "url": "http://internal/2022_Financial_Statements_Q1.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_Financial_Statements_Q1.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_Financial_Statements_Q1.pdf",
             "file_type": "pdf",
             "period": "Q1",
             "year": "2022",
@@ -50,7 +50,7 @@
         },
         {
             "url": "http://internal/2022_Financial_Statements_Q2.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_Financial_Statements_Q2.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_Financial_Statements_Q2.pdf",
             "file_type": "pdf",
             "period": "Q2",
             "year": "2022",
@@ -58,7 +58,7 @@
         },
         {
             "url": "http://internal/2022_Financial_Statements_Q3.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_Financial_Statements_Q3.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_Financial_Statements_Q3.pdf",
             "file_type": "pdf",
             "period": "Q3",
             "year": "2022",
@@ -66,7 +66,7 @@
         },
         {
             "url": "http://internal/2023_Financial_Statements_Annual.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_Financial_Statements_Annual.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_Financial_Statements_Annual.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2023",
@@ -74,7 +74,7 @@
         },
         {
             "url": "http://internal/2023_Financial_Statements_Q1.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_Financial_Statements_Q1.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_Financial_Statements_Q1.pdf",
             "file_type": "pdf",
             "period": "Q1",
             "year": "2023",
@@ -82,7 +82,7 @@
         },
         {
             "url": "http://internal/2023_Financial_Statements_Q2.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_Financial_Statements_Q2.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_Financial_Statements_Q2.pdf",
             "file_type": "pdf",
             "period": "Q2",
             "year": "2023",
@@ -90,7 +90,7 @@
         },
         {
             "url": "http://internal/2023_Financial_Statements_Q3.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_Financial_Statements_Q3.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_Financial_Statements_Q3.pdf",
             "file_type": "pdf",
             "period": "Q3",
             "year": "2023",
@@ -98,7 +98,7 @@
         },
         {
             "url": "http://internal/2024_Financial_Statements_Annual.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_Financial_Statements_Annual.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_Financial_Statements_Annual.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2024",
@@ -106,7 +106,7 @@
         },
         {
             "url": "http://internal/2024_Financial_Statements_Q1.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_Financial_Statements_Q1.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_Financial_Statements_Q1.pdf",
             "file_type": "pdf",
             "period": "Q1",
             "year": "2024",
@@ -114,7 +114,7 @@
         },
         {
             "url": "http://internal/2024_Financial_Statements_Q2.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_Financial_Statements_Q2.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_Financial_Statements_Q2.pdf",
             "file_type": "pdf",
             "period": "Q2",
             "year": "2024",
@@ -122,7 +122,7 @@
         },
         {
             "url": "http://internal/2024_Financial_Statements_Q3.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_Financial_Statements_Q3.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_Financial_Statements_Q3.pdf",
             "file_type": "pdf",
             "period": "Q3",
             "year": "2024",
@@ -130,7 +130,7 @@
         },
         {
             "url": "http://internal/2025_Financial_Statements_Q1.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_Financial_Statements_Q1.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_Financial_Statements_Q1.pdf",
             "file_type": "pdf",
             "period": "Q1",
             "year": "2025",
@@ -138,7 +138,7 @@
         },
         {
             "url": "http://internal/2025_Financial_Statements_Q2.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_Financial_Statements_Q2.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_Financial_Statements_Q2.pdf",
             "file_type": "pdf",
             "period": "Q2",
             "year": "2025",
@@ -146,7 +146,7 @@
         },
         {
             "url": "http://internal/2025_Financial_Statements_Q3.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_Financial_Statements_Q3.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_Financial_Statements_Q3.pdf",
             "file_type": "pdf",
             "period": "Q3",
             "year": "2025",
@@ -156,7 +156,7 @@
     "XBRL": [
         {
             "url": "http://internal/2021_XBRL_Annual.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_XBRL_Annual.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_XBRL_Annual.xls",
             "file_type": "excel",
             "period": "Annual",
             "year": "2021",
@@ -164,7 +164,7 @@
         },
         {
             "url": "http://internal/2021_XBRL_Q1.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_XBRL_Q1.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_XBRL_Q1.xls",
             "file_type": "excel",
             "period": "Q1",
             "year": "2021",
@@ -172,7 +172,7 @@
         },
         {
             "url": "http://internal/2021_XBRL_Q2.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_XBRL_Q2.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_XBRL_Q2.xls",
             "file_type": "excel",
             "period": "Q2",
             "year": "2021",
@@ -180,7 +180,7 @@
         },
         {
             "url": "http://internal/2021_XBRL_Q3.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_XBRL_Q3.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_XBRL_Q3.xls",
             "file_type": "excel",
             "period": "Q3",
             "year": "2021",
@@ -188,7 +188,7 @@
         },
         {
             "url": "http://internal/2022_XBRL_Annual.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_XBRL_Annual.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_XBRL_Annual.xls",
             "file_type": "excel",
             "period": "Annual",
             "year": "2022",
@@ -196,7 +196,7 @@
         },
         {
             "url": "http://internal/2022_XBRL_Q1.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_XBRL_Q1.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_XBRL_Q1.xls",
             "file_type": "excel",
             "period": "Q1",
             "year": "2022",
@@ -204,7 +204,7 @@
         },
         {
             "url": "http://internal/2022_XBRL_Q2.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_XBRL_Q2.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_XBRL_Q2.xls",
             "file_type": "excel",
             "period": "Q2",
             "year": "2022",
@@ -212,7 +212,7 @@
         },
         {
             "url": "http://internal/2022_XBRL_Q3.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_XBRL_Q3.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_XBRL_Q3.xls",
             "file_type": "excel",
             "period": "Q3",
             "year": "2022",
@@ -220,7 +220,7 @@
         },
         {
             "url": "http://internal/2023_XBRL_Annual.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_XBRL_Annual.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_XBRL_Annual.xls",
             "file_type": "excel",
             "period": "Annual",
             "year": "2023",
@@ -228,7 +228,7 @@
         },
         {
             "url": "http://internal/2023_XBRL_Q1.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_XBRL_Q1.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_XBRL_Q1.xls",
             "file_type": "excel",
             "period": "Q1",
             "year": "2023",
@@ -236,7 +236,7 @@
         },
         {
             "url": "http://internal/2023_XBRL_Q2.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_XBRL_Q2.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_XBRL_Q2.xls",
             "file_type": "excel",
             "period": "Q2",
             "year": "2023",
@@ -244,7 +244,7 @@
         },
         {
             "url": "http://internal/2023_XBRL_Q3.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_XBRL_Q3.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_XBRL_Q3.xls",
             "file_type": "excel",
             "period": "Q3",
             "year": "2023",
@@ -252,7 +252,7 @@
         },
         {
             "url": "http://internal/2024_XBRL_Annual.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_XBRL_Annual.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_XBRL_Annual.xls",
             "file_type": "excel",
             "period": "Annual",
             "year": "2024",
@@ -260,7 +260,7 @@
         },
         {
             "url": "http://internal/2024_XBRL_Q1.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_XBRL_Q1.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_XBRL_Q1.xls",
             "file_type": "excel",
             "period": "Q1",
             "year": "2024",
@@ -268,7 +268,7 @@
         },
         {
             "url": "http://internal/2024_XBRL_Q2.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_XBRL_Q2.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_XBRL_Q2.xls",
             "file_type": "excel",
             "period": "Q2",
             "year": "2024",
@@ -276,7 +276,7 @@
         },
         {
             "url": "http://internal/2024_XBRL_Q3.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_XBRL_Q3.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_XBRL_Q3.xls",
             "file_type": "excel",
             "period": "Q3",
             "year": "2024",
@@ -284,7 +284,7 @@
         },
         {
             "url": "http://internal/2025_XBRL_Q1.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_XBRL_Q1.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_XBRL_Q1.xls",
             "file_type": "excel",
             "period": "Q1",
             "year": "2025",
@@ -292,7 +292,7 @@
         },
         {
             "url": "http://internal/2025_XBRL_Q2.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_XBRL_Q2.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_XBRL_Q2.xls",
             "file_type": "excel",
             "period": "Q2",
             "year": "2025",
@@ -300,7 +300,7 @@
         },
         {
             "url": "http://internal/2025_XBRL_Q3.xls",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2025_XBRL_Q3.xls",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2025_XBRL_Q3.xls",
             "file_type": "excel",
             "period": "Q3",
             "year": "2025",
@@ -310,7 +310,7 @@
     "Board Report": [
         {
             "url": "http://internal/2021_Board_Report_Board_Report.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2021_Board_Report_Board_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2021_Board_Report_Board_Report.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2021",
@@ -318,7 +318,7 @@
         },
         {
             "url": "http://internal/2022_Board_Report_Board_Report.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2022_Board_Report_Board_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2022_Board_Report_Board_Report.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2022",
@@ -326,7 +326,7 @@
         },
         {
             "url": "http://internal/2023_Board_Report_Board_Report.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2023_Board_Report_Board_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_Board_Report_Board_Report.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2023",
@@ -334,12 +334,29 @@
         },
         {
             "url": "http://internal/2024_Board_Report_Board_Report.pdf",
-            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\7200\\2024_Board_Report_Board_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_Board_Report_Board_Report.pdf",
             "file_type": "pdf",
             "period": "Annual",
             "year": "2024",
             "published_date": ""
         }
     ],
-    "ESG Report": []
+    "ESG Report": [
+        {
+            "url": "http://internal/2023_ESG_Report_ESG_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2023_ESG_Report_ESG_Report.pdf",
+            "file_type": "pdf",
+            "period": "ESG_Report",
+            "year": "2023",
+            "published_date": ""
+        },
+        {
+            "url": "http://internal/2024_ESG_Report_ESG_Report.pdf",
+            "local_path": "D:\\Work\\LUMIVST\\backend\\data\\downloads\\3020\\2024_ESG_Report_ESG_Report.pdf",
+            "file_type": "pdf",
+            "period": "ESG_Report",
+            "year": "2024",
+            "published_date": ""
+        }
+    ]
 }

@@ -119,7 +119,8 @@ def update_daily(target_date_str=None):
                     "industry_group": h.get("industry_group"),
                     "sector": h.get("sector"),
                     "industry": h.get("industry"),
-                    "sub_industry": h.get("sub_industry")
+                    "sub_industry": h.get("sub_industry"),
+                    "market_cap": float(item.get("Market Cap", 0.0))
                 }
                 
                 # Upsert
@@ -140,7 +141,8 @@ def update_daily(target_date_str=None):
                         "industry_group": stmt.excluded.industry_group,
                         "sector": stmt.excluded.sector,
                         "industry": stmt.excluded.industry,
-                        "sub_industry": stmt.excluded.sub_industry
+                        "sub_industry": stmt.excluded.sub_industry,
+                        "market_cap": stmt.excluded.market_cap
                     }
                 )
                 db.execute(stmt)
@@ -188,6 +190,53 @@ def update_daily(target_date_str=None):
         df_tech_res = tech_calc.calculate(df_tech)
         tech_calc.save_latest(df_tech_res)
         logger.info("✅ Technical Indicators Updated.")
+
+        # 6. Calculate IBD Metrics (RS Ratings & Acc/Dis)
+        # -------------------------------------------------------------------
+        logger.info("📊 Calculating IBD Metrics (Group RS, Acc/Dis)...")
+        from scripts.calculate_ibd_metrics import IBDMetricsCalculator
+        
+        ibd_calc = IBDMetricsCalculator(db)
+        # Load enough history (approx 7 months)
+        df_ibd_prices = ibd_calc.load_data(lookback_days=230)
+        
+        if not df_ibd_prices.empty:
+            # Determine target date (ensure we don't calculate for future if data is missing)
+            # Use market_date as the target
+            
+            # calculate_group_rs and calculate_acc_dis expect a datetime object or date string
+            # Let's verify what they expect. The script converts to pd.to_datetime inside.
+            
+            group_rs_map = ibd_calc.calculate_group_rs(df_ibd_prices, market_date)
+            acc_dis_map = ibd_calc.calculate_acc_dis(df_ibd_prices, market_date)
+            
+            if group_rs_map or acc_dis_map:
+                ibd_calc.save_results(group_rs_map, acc_dis_map, market_date)
+                logger.info("✅ IBD Metrics Updated.")
+            else:
+                 logger.warning("⚠️ No IBD results generated.")
+        else:
+            logger.warning("⚠️ No price data found for IBD Metrics.")
+
+        # 7. Calculate Industry Group Metrics
+        # -------------------------------------------------------------------
+        logger.info("🏭 Calculating Industry Group Metrics (Market Cap, Rank, YTD)...")
+        from scripts.calculate_industry_groups import IndustryGroupCalculator
+        
+        # Re-using the same DB session might be tricky if calc opens its own, so we pass current db or let it handle it.
+        # The IndustryGroupCalculator takes a session in __init__.
+        # We should create a new instance using the current session 'db'
+        
+        ig_calc = IndustryGroupCalculator(db)
+        # Load data for today
+        df_ig = ig_calc.load_metric_data(market_date)
+        if not df_ig.empty:
+            summary_ig = ig_calc.calculate_metrics(df_ig)
+            summary_ig = ig_calc.get_historical_ranks(summary_ig, market_date)
+            ig_calc.save(summary_ig, market_date)
+            logger.info("✅ Industry Group Metrics Updated.")
+        else:
+            logger.warning("⚠️ No data found for Industry Group Metrics calculation.")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 
