@@ -33,9 +33,13 @@ def build_driver(headless=True):
     # Check for Chrome binary from environment variable (for Render)
     chrome_bin = os.environ.get('CHROME_BIN') or os.environ.get('GOOGLE_CHROME_BIN')
     if chrome_bin:
-        logger.info(f"📍 Using Chrome binary from env: {chrome_bin}")
-        options.binary_location = chrome_bin
-    else:
+        if os.path.exists(chrome_bin):
+            logger.info(f"📍 Using Chrome binary from env: {chrome_bin}")
+            options.binary_location = chrome_bin
+        else:
+            logger.warning(f"⚠️ Configured CHROME_BIN ({chrome_bin}) not found! Falling back to auto-detection.")
+    
+    if not options.binary_location:
         # Try common paths on Linux (Render)
         linux_chrome_paths = [
             '/usr/bin/google-chrome',
