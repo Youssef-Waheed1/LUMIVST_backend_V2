@@ -20,7 +20,7 @@ class Settings:
         self.ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
         # ⚠️ تحديث الـ CORS للإنتاج
-        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.zakhm.ai,https://zakhm.ai")
+        allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://www.rebh.ai,https://rebh.ai")
         if self.DEBUG:
             self.ALLOWED_ORIGINS = ["*"]
         else:
@@ -38,7 +38,7 @@ class Settings:
         self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
         self.SMTP_USER = os.getenv("SMTP_USER", "")
         self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-        self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@zakhm.ai")
+        self.FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@rebh.ai")
 
         # Social Login
         self.GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")

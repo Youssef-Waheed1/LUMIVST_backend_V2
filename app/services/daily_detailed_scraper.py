@@ -17,45 +17,107 @@ logger = logging.getLogger(__name__)
 def build_driver(headless=True):
     """
     إعداد متصفح كروم بنفس إعدادات السكريبت القديم
-    مع دعم Render deployment
+    مع دعم Render/Docker deployment
     """
-    options = Options()
-    if headless:
-        options.add_argument("--headless=new")
+    import shutil
     
+    options = Options()
+    
+    # إعدادات أساسية للاستقرار
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--remote-debugging-port=9222")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
-    # Check for Chrome binary from environment variable (for Render)
-    chrome_bin = os.environ.get('CHROME_BIN') or os.environ.get('GOOGLE_CHROME_BIN')
-    if chrome_bin:
-        if os.path.exists(chrome_bin):
-            logger.info(f"📍 Using Chrome binary from env: {chrome_bin}")
-            options.binary_location = chrome_bin
-        else:
-            logger.warning(f"⚠️ Configured CHROME_BIN ({chrome_bin}) not found! Falling back to auto-detection.")
+    if headless:
+        options.add_argument("--headless=new")
     
-    if not options.binary_location:
-        # Try common paths on Linux (Render)
+    # البحث عن Chrome binary
+    chrome_bin = None
+    
+    # 1. Check environment variables first
+    for env_var in ['CHROME_BIN', 'GOOGLE_CHROME_BIN', 'CHROMIUM_BIN']:
+        env_path = os.environ.get(env_var)
+        if env_path and os.path.exists(env_path):
+            chrome_bin = env_path
+            logger.info(f"📍 Found Chrome from env {env_var}: {chrome_bin}")
+            break
+    
+    # 2. Try shutil.which() to find Chrome in PATH
+    if not chrome_bin:
+        for chrome_name in ['google-chrome-stable', 'google-chrome', 'chromium-browser', 'chromium', 'chrome']:
+            found_path = shutil.which(chrome_name)
+            if found_path:
+                chrome_bin = found_path
+                logger.info(f"📍 Found Chrome in PATH: {chrome_bin}")
+                break
+    
+    # 3. Try common Linux/Docker/Render paths
+    if not chrome_bin:
         linux_chrome_paths = [
-            '/usr/bin/google-chrome',
+            # Render Chrome for Testing (from build script)
+            '/opt/render/project/.chrome/chrome-linux64/chrome',
+            # Standard Linux paths
             '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome',
             '/usr/bin/chromium-browser',
             '/usr/bin/chromium',
+            '/opt/google/chrome/chrome',
+            '/opt/google/chrome/google-chrome',
+            '/snap/bin/chromium',
+            # Render apt buildpack path
+            '/app/.apt/usr/bin/google-chrome',
         ]
         for path in linux_chrome_paths:
             if os.path.exists(path):
-                logger.info(f"📍 Found Chrome at: {path}")
-                options.binary_location = path
+                chrome_bin = path
+                logger.info(f"📍 Found Chrome at common path: {chrome_bin}")
                 break
     
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
-    return driver
+    # Set binary location if found
+    if chrome_bin:
+        options.binary_location = chrome_bin
+        logger.info(f"✅ Using Chrome binary: {chrome_bin}")
+    else:
+        logger.warning("⚠️ Chrome binary not found! Will try default ChromeDriver behavior.")
+    
+    # Try to create the driver
+    try:
+        # First try webdriver-manager
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        logger.info("✅ Chrome WebDriver initialized successfully (via webdriver-manager)")
+        return driver
+    except Exception as e:
+        logger.warning(f"⚠️ webdriver-manager failed: {e}")
+        
+        # Fallback: Try Render's ChromeDriver path
+        render_chromedriver = '/opt/render/project/.chrome/chromedriver-linux64/chromedriver'
+        env_chromedriver = os.environ.get('CHROMEDRIVER_PATH')
+        
+        chromedriver_path = None
+        if env_chromedriver and os.path.exists(env_chromedriver):
+            chromedriver_path = env_chromedriver
+        elif os.path.exists(render_chromedriver):
+            chromedriver_path = render_chromedriver
+        
+        if chromedriver_path:
+            logger.info(f"📍 Trying fallback ChromeDriver: {chromedriver_path}")
+            service = Service(chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=options)
+            logger.info("✅ Chrome WebDriver initialized successfully (via fallback)")
+            return driver
+        
+        logger.error(f"❌ Failed to initialize Chrome: {e}")
+        raise
 
 def clean_number(text):
     """
