@@ -89,34 +89,48 @@ def build_driver(headless=True):
     else:
         logger.warning("⚠️ Chrome binary not found! Will try default ChromeDriver behavior.")
     
-    # Try to create the driver
+    # Try to locate ChromeDriver manually first (Best for Render/Docker)
+    chromedriver_path = None
+    
+    # Check environment variable
+    env_chromedriver = os.environ.get('CHROMEDRIVER_PATH')
+    if env_chromedriver and os.path.exists(env_chromedriver):
+        chromedriver_path = env_chromedriver
+    
+    # Check common paths if env var not set
+    if not chromedriver_path:
+        possible_driver_paths = [
+            '/opt/render/project/.chrome/chromedriver-linux64/chromedriver',
+            '/app/.chromedriver/bin/chromedriver',
+            '/usr/bin/chromedriver',
+            '/usr/local/bin/chromedriver'
+        ]
+        for path in possible_driver_paths:
+            if os.path.exists(path):
+                chromedriver_path = path
+                break
+
+    # If we found a specific ChromeDriver, try using it first
+    if chromedriver_path:
+        try:
+            logger.info(f"📍 Found explicit ChromeDriver at: {chromedriver_path}")
+            service = Service(chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=options)
+            logger.info("✅ Chrome WebDriver initialized successfully (via explicit path)")
+            return driver
+        except Exception as e:
+            logger.warning(f"⚠️ Explicit ChromeDriver failed, falling back to manager: {e}")
+
+    # Fallback: webdriver-manager
     try:
-        # First try webdriver-manager
+        logger.info("🔄 Attempting to use webdriver-manager...")
+        from webdriver_manager.chrome import ChromeDriverManager
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         logger.info("✅ Chrome WebDriver initialized successfully (via webdriver-manager)")
         return driver
     except Exception as e:
-        logger.warning(f"⚠️ webdriver-manager failed: {e}")
-        
-        # Fallback: Try Render's ChromeDriver path
-        render_chromedriver = '/opt/render/project/.chrome/chromedriver-linux64/chromedriver'
-        env_chromedriver = os.environ.get('CHROMEDRIVER_PATH')
-        
-        chromedriver_path = None
-        if env_chromedriver and os.path.exists(env_chromedriver):
-            chromedriver_path = env_chromedriver
-        elif os.path.exists(render_chromedriver):
-            chromedriver_path = render_chromedriver
-        
-        if chromedriver_path:
-            logger.info(f"📍 Trying fallback ChromeDriver: {chromedriver_path}")
-            service = Service(chromedriver_path)
-            driver = webdriver.Chrome(service=service, options=options)
-            logger.info("✅ Chrome WebDriver initialized successfully (via fallback)")
-            return driver
-        
-        logger.error(f"❌ Failed to initialize Chrome: {e}")
+        logger.error(f"❌ All methods failed to initialize Chrome: {e}")
         raise
 
 def clean_number(text):
