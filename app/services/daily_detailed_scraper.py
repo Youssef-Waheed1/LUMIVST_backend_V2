@@ -21,6 +21,18 @@ def build_driver(headless=True):
     """
     import shutil
     
+    # Debug: Log environment variables for troubleshooting
+    chrome_bin_env = os.environ.get('CHROME_BIN')
+    chromedriver_env = os.environ.get('CHROMEDRIVER_PATH')
+    logger.info(f"🔍 DEBUG: CHROME_BIN env = {chrome_bin_env}")
+    logger.info(f"🔍 DEBUG: CHROMEDRIVER_PATH env = {chromedriver_env}")
+    
+    # Check if the paths exist
+    render_chrome = '/opt/render/project/.chrome/chrome-linux64/chrome'
+    render_driver = '/opt/render/project/.chrome/chromedriver-linux64/chromedriver'
+    logger.info(f"🔍 DEBUG: Render Chrome exists = {os.path.exists(render_chrome)}")
+    logger.info(f"🔍 DEBUG: Render ChromeDriver exists = {os.path.exists(render_driver)}")
+    
     options = Options()
     
     # إعدادات أساسية للاستقرار
