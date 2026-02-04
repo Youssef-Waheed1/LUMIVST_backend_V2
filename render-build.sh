@@ -4,6 +4,7 @@
 set -e
 
 echo "🔧 Installing Python dependencies..."
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 
 echo "🌐 Installing Chrome using apt buildpack approach..."
