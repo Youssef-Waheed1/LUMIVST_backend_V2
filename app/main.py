@@ -134,21 +134,8 @@ async def startup_event():
     else:
         print("✅ Redis cache initialized successfully")
     
-    from apscheduler.schedulers.asyncio import AsyncIOScheduler
-    from pytz import UTC
-    scheduler = AsyncIOScheduler(timezone=UTC)
-    
-    @scheduler.scheduled_job('cron', day_of_week='0-3,6', hour=15, minute=0, timezone=UTC)  # Sun-Thu at 15:00 UTC (18:00 Riyadh)
-    async def daily_rs_update():
-        from scripts.daily_market_update import update_daily
-        print("🔄 Running daily RS update (Scraper V2 + RS V2)...")
-        # تشغيل السكريبت المتزامن في Thread منفصل عشان مياخدش الـ Thread الأساسي
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, update_daily)
-    
-    scheduler.start()
-    print("✅ Scheduler started for daily RS updates (At 13:00 UTC / 17:00 UAE)")
-    # Backend reloaded for RS V2 updates
+    # Scheduler removed in favor of Render Cron Job
+    # The daily update script is now run independently.
 
 @app.get("/")
 async def root():

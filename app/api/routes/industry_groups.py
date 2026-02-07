@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
@@ -49,3 +49,110 @@ def get_latest_industry_groups(
     ).all()
     
     return groups
+
+# --- New Endpoint for Group Details ---
+
+from app.models.price import Price
+# Re-using PriceResponse or simpler
+from app.schemas.price import PriceResponse
+
+from app.models.rs_daily import RSDaily
+
+class IndustryGroupStockResponse(PriceResponse):
+    rs_rating: Optional[int] = None
+    rs_rating_1_week_ago: Optional[int] = None
+    rs_rating_4_weeks_ago: Optional[int] = None
+    rs_rating_3_months_ago: Optional[int] = None
+    rs_rating_6_months_ago: Optional[int] = None
+    rs_rating_1_year_ago: Optional[int] = None
+
+@router.get("/stocks", response_model=List[IndustryGroupStockResponse])
+def get_industry_group_stocks(
+    industry_group: str = Query(..., description="Name of the industry group"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all stocks belonging to a specific Industry Group for the latest available date,
+    including historical RS ratings.
+    """
+    # 1. Find the latest date in Prices
+    latest_date = db.query(func.max(Price.date)).scalar()
+    
+    if not latest_date:
+        return []
+
+    # 2. Query stocks
+    stocks = db.query(Price).filter(
+        Price.date == latest_date,
+        Price.industry_group == industry_group
+    ).order_by(Price.symbol).all()
+    
+    if not stocks:
+        return []
+
+    # 3. Get Historical Dates & RS Data
+    # Get sorted distinct dates descending
+    available_dates = db.query(RSDaily.date).distinct().order_by(RSDaily.date.desc()).limit(300).all()
+    available_dates = [d[0] for d in available_dates] # flatten
+
+    # Define indices for time periods (Trading Days)
+    # 1 week ~ 5 days
+    # 4 weeks ~ 20 days
+    # 3 months ~ 63 days
+    # 6 months ~ 126 days
+    # 1 year ~ 252 days
+    
+    target_indices = {
+        'current': 0,
+        '1_week': 5,
+        '4_weeks': 20,
+        '3_months': 63,
+        '6_months': 126,
+        '1_year': 252
+    }
+    
+    target_dates_map = {} # date -> period_key
+    
+    for key, idx in target_indices.items():
+        if idx < len(available_dates):
+            target_dates_map[available_dates[idx]] = key
+            
+    # Fetch RS data for these stocks and dates
+    stock_symbols = [s.symbol for s in stocks]
+    target_dates_list = list(target_dates_map.keys())
+    
+    rs_records = db.query(RSDaily).filter(
+        RSDaily.symbol.in_(stock_symbols),
+        RSDaily.date.in_(target_dates_list)
+    ).all()
+    
+    # Organize RS data: symbol -> period_key -> rating
+    rs_lookup = {}
+    for record in rs_records:
+        if record.symbol not in rs_lookup:
+            rs_lookup[record.symbol] = {}
+        
+        # Determine period
+        if record.date in target_dates_map:
+            period = target_dates_map[record.date]
+            rs_lookup[record.symbol][period] = record.rs_rating
+
+    # 4. Merge Data
+    result = []
+    for stock in stocks:
+        # Pydantic model from ORM object
+        stock_data = IndustryGroupStockResponse.from_orm(stock)
+        
+        # Add RS data
+        if stock.symbol in rs_lookup:
+            stock_rs = rs_lookup[stock.symbol]
+            stock_data.rs_rating = stock_rs.get('current')
+            stock_data.rs_rating_1_week_ago = stock_rs.get('1_week')
+            stock_data.rs_rating_4_weeks_ago = stock_rs.get('4_weeks')
+            stock_data.rs_rating_3_months_ago = stock_rs.get('3_months')
+            stock_data.rs_rating_6_months_ago = stock_rs.get('6_months')
+            stock_data.rs_rating_1_year_ago = stock_rs.get('1_year')
+            
+        result.append(stock_data)
+    
+    return result

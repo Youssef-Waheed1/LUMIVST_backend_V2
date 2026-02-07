@@ -258,10 +258,8 @@ class RSCalculatorUltraFast:
                 FROM price_data pd
                 JOIN stock_list sl ON pd.symbol = sl.symbol
                 WHERE pd.date = :target_date
+                    -- Only require 3 months of history minimum to calculate RS
                     AND pd.price_3m_ago IS NOT NULL
-                    AND pd.price_6m_ago IS NOT NULL
-                    AND pd.price_9m_ago IS NOT NULL
-                    AND pd.price_12m_ago IS NOT NULL
             )
             SELECT 
                 symbol,
@@ -276,9 +274,6 @@ class RSCalculatorUltraFast:
                 CAST((current_price - price_12m_ago) / price_12m_ago AS FLOAT) as return_12m
             FROM current_data
             WHERE price_3m_ago > 0 
-                AND price_6m_ago > 0 
-                AND price_9m_ago > 0 
-                AND price_12m_ago > 0
                 AND current_price > 0
             ORDER BY symbol
         """
@@ -294,7 +289,8 @@ class RSCalculatorUltraFast:
             # CONVERT all to float to avoid Decimal issues
             numeric_cols = ['current_price', 'return_3m', 'return_6m', 'return_9m', 'return_12m']
             for col in numeric_cols:
-                df[col] = df[col].astype(float)
+                # Handle None/NaN before conversion
+                df[col] = pd.to_numeric(df[col], errors='coerce')
             
             # 2. Calculate RS Raw using vectorization (super fast)
             # 2. Calculate Ranks for EACH period independently FIRST (Excel Logic)
@@ -328,24 +324,33 @@ class RSCalculatorUltraFast:
                 # Assign to dataframe for saving/debugging
                 df[f'rank_{period}'] = pd.Series(period_ranks[period]).fillna(-1).astype(int).replace({-1: None})
 
-            # 3. Calculate Final RS Rating as Weighted Average of Ranks (Excel Logic)
+            # 3. Calculate Final RS Rating as Weighted Average of Ranks (Dynamic Weights)
             # Weights: 3m (40%), 6m (20%), 9m (20%), 12m (20%)
             
-            rank_3m = period_ranks['3m']
-            rank_6m = period_ranks['6m']
-            rank_9m = period_ranks['9m']
-            rank_12m = period_ranks['12m']
+            weights = {'3m': 0.40, '6m': 0.20, '9m': 0.20, '12m': 0.20}
             
-            # Calculate final score (Weighted Average of Ranks)
-            final_score = (
-                rank_3m * 0.40 +
-                rank_6m * 0.20 +
-                rank_9m * 0.20 +
-                rank_12m * 0.20
-            )
+            numerator = np.zeros(len(df))
+            denominator = np.zeros(len(df))
+            
+            for period, weight in weights.items():
+                ranks = period_ranks[period]
+                mask = ~np.isnan(ranks)
+                
+                # Add weighted rank where available
+                numerator[mask] += ranks[mask] * weight
+                denominator[mask] += weight
+            
+            # Calculate final score only where we have at least some data (denominator > 0)
+            valid_score_mask = denominator > 0
+            final_score = np.zeros(len(df))
+            
+            # Normalize the score: sum(weighted_ranks) / sum(valid_weights)
+            # e.g. if only 3m (0.4) exists: score = (rank * 0.4) / 0.4 = rank
+            # e.g. if 3m(0.4) and 6m(0.2) exist: score = (r3*0.4 + r6*0.2) / 0.6
+            final_score[valid_score_mask] = numerator[valid_score_mask] / denominator[valid_score_mask]
+            final_score[~valid_score_mask] = np.nan
             
             # Round up as per Excel Formula: ROUNDUP(value, 0)
-            # np.ceil does exactly this for positive numbers
             df['rs_rating'] = np.ceil(final_score)
             
             # Store the calculated score as 'rs_raw' for reference
@@ -818,7 +823,8 @@ class RSCalculatorUltraFast:
             df_all = df_all.reset_index()
             
             original_len = len(df_all)
-            df_all = df_all.dropna(subset=['return_3m', 'return_6m', 'return_9m', 'return_12m'])
+            # RELAXED FILTER: Keep rows with at least 3m return
+            df_all = df_all.dropna(subset=['return_3m'])
             print(f"   Filtered valid rows: {len(df_all):,} (from {original_len:,})")
             
             if len(df_all) == 0:
@@ -831,22 +837,53 @@ class RSCalculatorUltraFast:
             for p in periods.keys():
                 col = f'return_{p}'
                 rank_col = f'rank_{p}'
+                # Convert to numeric, errors='coerce' turns non-numeric to NaN
                 df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+                
+                # Calculate rank only on valid numeric values
+                # groupby(date) respects the date index or column
+                # we need to ensure we don't rank NaNs as 100 or something wrong
+                # rank(pct=True) naturally handles NaNs by ignoring them in calculation but keeping them as NaN in output if na_option='keep' (default)
                 df_all[rank_col] = df_all.groupby('date')[col].rank(pct=True, method='average') * 100
-                df_all[rank_col] = df_all[rank_col].fillna(50).round().clip(1, 99).astype(int)
+                
+                # Fill missing ranks with -1 for now, then clip valid ones
+                # We do NOT want to fill NaNs with 50 here because that would imply average performance for missing data
+                # Instead, leave them as NaN so they are ignored in the weighted average
+                df_all[rank_col] = df_all[rank_col].round().clip(1, 99)
 
-            # 6. Calculate Weighted RS (Excel Logic)
+            # 6. Calculate Weighted RS (Dynamic Weights Logic)
             print("🧮 Calculating Final Weighted RS...")
             
-            final_score = (
-                df_all['rank_3m'] * 0.40 +
-                df_all['rank_6m'] * 0.20 +
-                df_all['rank_9m'] * 0.20 +
-                df_all['rank_12m'] * 0.20
-            )
+            # Weighted Average allowing missing periods
+            weights = {'3m': 0.40, '6m': 0.20, '9m': 0.20, '12m': 0.20}
             
-            df_all['rs_rating'] = np.ceil(final_score).clip(1, 99).astype(int)
+            numerator = 0
+            denominator = 0
+            
+            for p, w in weights.items():
+                rank_col = f'rank_{p}'
+                # Check where rank is NOT NaN
+                mask = df_all[rank_col].notna()
+                
+                # Add to numerator and denominator where data exists
+                numerator += df_all[rank_col].fillna(0) * (mask * w)
+                denominator += mask * w
+                
+                # IMPORTANT: Convert ranks to Integer for DB saving
+                # Floating point ranks (e.g. 94.0) cause DB errors in Integer columns
+                df_all[rank_col] = df_all[rank_col].fillna(-1).astype(int).replace({-1: None})
+            
+            # Avoid division by zero
+            final_score = np.where(denominator > 0, numerator / denominator, np.nan)
+            
+            # Assign to DataFrame
             df_all['rs_raw'] = final_score
+            
+            # Round up and fill NaNs
+            # Use final_score (numpy array) directly to create the column first to avoid index alignment issues with pd.Series()
+            # Or explicitly pass the index
+            df_all['rs_rating'] = pd.Series(final_score, index=df_all.index)
+            df_all['rs_rating'] = np.ceil(df_all['rs_rating']).clip(1, 99).fillna(-1).astype(int).replace({-1: None})
             
             # Add static metadata
             print("🔗 Merging static company info...")
