@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, desc
 from typing import List, Optional, Dict, Any
 from datetime import date
 import json
@@ -10,19 +10,7 @@ import numpy as np
 
 from app.core.database import get_db
 from app.core.limiter import limiter
-from app.core.redis import redis_cache
-from app.models.price import Price
-from app.services.technical_indicators import (
-    calculate_all_indicators_for_stock,
-    run_full_screener,
-    RSIIndicator,
-    TheNumberIndicator,
-    StampIndicator,
-    TrendScreener,
-    RSIScreener,
-    get_stock_prices,
-    resample_to_weekly
-)
+from app.models.stock_indicators import StockIndicator
 
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -38,108 +26,159 @@ class DecimalEncoder(json.JSONEncoder):
 
 router = APIRouter(prefix="/technical-screener", tags=["Technical Screener"])
 
-@router.get("/stock/{symbol}")
-@limiter.limit("20/minute")
-async def retrieve_stock_indicators(request: Request, symbol: str, db: Session = Depends(get_db)):
-    """ Get all technical indicators for a specific stock """
-    try:
-        # Try Cache First
-        cache_key = f"technical_screener:stock:{symbol}"
-        cached_data = await redis_cache.get(cache_key)
-        
-        if cached_data:
-            # redis_cache wrapper already deserializes if it's JSON
-            data = cached_data
-        else:
-            # Verify symbol exists
-            stock = db.query(Price).filter(Price.symbol == symbol).first()
-            if not stock:
-                raise HTTPException(status_code=404, detail="Stock not found")
-        
-            data = calculate_all_indicators_for_stock(db, symbol)
-            if not data:
-                # Cache empty result for short time to prevent spam
-                await redis_cache.set(cache_key, {}, expire=60)
-                raise HTTPException(status_code=404, detail="Insufficient data for calculation")
-            
-            # Cache result
-            await redis_cache.set(cache_key, json.dumps(data, cls=DecimalEncoder), expire=3600)
 
+def indicator_to_dict(ind: StockIndicator) -> dict:
+    """Convert StockIndicator model to dictionary"""
+    return {
+        'symbol': ind.symbol,
+        'company_name': ind.company_name,
+        'date': str(ind.date) if ind.date else None,
+        'close': float(ind.close) if ind.close else None,
+        
+        # RSI Values
+        'rsi': float(ind.rsi_14) if ind.rsi_14 else None,
+        'sma9_rsi': float(ind.sma9_rsi) if ind.sma9_rsi else None,
+        'wma45_rsi': float(ind.wma45_rsi) if ind.wma45_rsi else None,
+        'ema45_rsi': float(ind.ema45_rsi) if ind.ema45_rsi else None,
+        
+        # The Number
+        'sma9_close': float(ind.sma9_close) if ind.sma9_close else None,
+        'the_number': float(ind.the_number) if ind.the_number else None,
+        
+        # STAMP
+        'stamp': bool(ind.stamp),
+        'stamp_daily': bool(ind.stamp_daily),
+        'stamp_weekly': bool(ind.stamp_weekly),
+        
+        # Conditions
+        'rsi_55_70': bool(ind.rsi_55_70),
+        'sma9_gt_tn_daily': bool(ind.sma9_gt_tn_daily),
+        'sma9_gt_tn_weekly': bool(ind.sma9_gt_tn_weekly),
+        
+        # Trend
+        'cci': float(ind.cci) if ind.cci else None,
+        'aroon_up': float(ind.aroon_up) if ind.aroon_up else None,
+        'aroon_down': float(ind.aroon_down) if ind.aroon_down else None,
+        'trend_signal': bool(ind.trend_signal),
+        
+        # Final
+        'final_signal': bool(ind.final_signal),
+        'score': int(ind.score) if ind.score else 0,
+        
+        # Weekly Values
+        'rsi_w': float(ind.rsi_w) if ind.rsi_w else None,
+        'sma9_rsi_w': float(ind.sma9_rsi_w) if ind.sma9_rsi_w else None,
+        'wma45_rsi_w': float(ind.wma45_rsi_w) if ind.wma45_rsi_w else None,
+        'ema45_rsi_w': float(ind.ema45_rsi_w) if ind.ema45_rsi_w else None,
+        'sma9_close_w': float(ind.sma9_close_w) if ind.sma9_close_w else None,
+        'the_number_w': float(ind.the_number_w) if ind.the_number_w else None,
+        
+        # Daily Conditions
+        'rsi_lt_80_d': bool(ind.rsi_lt_80_d),
+        'sma9_rsi_lte_75_d': bool(ind.sma9_rsi_lte_75_d),
+        'ema45_rsi_lte_70_d': bool(ind.ema45_rsi_lte_70_d),
+        'rsi_gt_wma45_d': bool(ind.rsi_gt_wma45_d),
+        'sma9rsi_gt_wma45rsi_d': bool(ind.sma9rsi_gt_wma45rsi_d),
+        
+        # Weekly Conditions
+        'rsi_lt_80_w': bool(ind.rsi_lt_80_w),
+        'sma9_rsi_lte_75_w': bool(ind.sma9_rsi_lte_75_w),
+        'ema45_rsi_lte_70_w': bool(ind.ema45_rsi_lte_70_w),
+        'rsi_gt_wma45_w': bool(ind.rsi_gt_wma45_w),
+        'sma9rsi_gt_wma45rsi_w': bool(ind.sma9rsi_gt_wma45rsi_w),
+    }
+
+
+@router.get("/stock/{symbol}")
+@limiter.limit("60/minute")
+async def retrieve_stock_indicators(request: Request, symbol: str, db: Session = Depends(get_db)):
+    """ Get all technical indicators for a specific stock from pre-computed database """
+    try:
+        # Get latest indicator for this symbol
+        indicator = db.query(StockIndicator).filter(
+            StockIndicator.symbol == symbol
+        ).order_by(desc(StockIndicator.date)).first()
+        
+        if not indicator:
+            raise HTTPException(status_code=404, detail="Stock not found or no indicators available")
+        
+        data = indicator_to_dict(indicator)
+        
         return {
             "symbol": symbol,
             "date": data.get('date'),
             "close": data.get('close'),
             "indicators": {
                 "rsi": {
-                    "rsi": data.get('screener_rsi'),
-                    "sma9": data.get('screener_sma9_rsi'),
-                    "wma45": data.get('screener_wma45_rsi')
+                    "rsi": data.get('rsi'),
+                    "sma9": data.get('sma9_rsi'),
+                    "wma45": data.get('wma45_rsi')
                 },
                 "the_number": {
-                    "sma9": data.get('screener_sma9_close'),
-                    "value": data.get('screener_the_number'),
+                    "sma9": data.get('sma9_close'),
+                    "value": data.get('the_number'),
                     "upper_band": None,
                     "lower_band": None
                 },
                 "stamp": {
-                    "s9_rsi": data.get('screener_sma9_rsi'),
-                    "e45_cfg": data.get('stamp_e45_cfg'),
-                    "e45_rsi": data.get('screener_ema45_rsi'),
-                    "e20_sma3_rsi3": data.get('stamp_e20_sma3_rsi3')
+                    "s9_rsi": data.get('sma9_rsi'),
+                    "e45_cfg": None,
+                    "e45_rsi": data.get('ema45_rsi'),
+                    "e20_sma3_rsi3": None
                 },
                 "trend_screener": {
-                    "signal": data.get('trend_final_signal'),
-                    "cci": data.get('trend_cci'),
-                    "cci_ema20": data.get('trend_cci_ema20'),
-                    "aroon_up": data.get('trend_aroon_up'),
-                    "aroon_down": data.get('trend_aroon_down'),
+                    "signal": data.get('trend_signal'),
+                    "cci": data.get('cci'),
+                    "cci_ema20": None,
+                    "aroon_up": data.get('aroon_up'),
+                    "aroon_down": data.get('aroon_down'),
                     "conditions": {
-                        "price_gt_sma18": data.get('trend_price_gt_sma18'),
-                        "sma_trend_daily": data.get('trend_sma_trend_daily'),
-                        "cci_gt_100": data.get('trend_cci_gt_100'),
-                        "cci_ema20_gt_0": data.get('trend_cci_ema20_gt_0_daily'),
-                        "aroon_up_gt_70": data.get('trend_aroon_up_gt_70'),
-                        "aroon_down_lt_30": data.get('trend_aroon_down_lt_30')
+                        "price_gt_sma18": None,
+                        "sma_trend_daily": None,
+                        "cci_gt_100": None,
+                        "cci_ema20_gt_0": None,
+                        "aroon_up_gt_70": None,
+                        "aroon_down_lt_30": None
                     }
                 },
                 "rsi_screener": {
-                    "final_signal": data.get('screener_final_signal'),
-                    "score": data.get('screener_score'),
-                    "total_conditions": data.get('screener_score'),
-                    "stamp": data.get('screener_stamp'),
-                    "stamp_daily": data.get('screener_stamp_daily'),
-                    "stamp_weekly": data.get('screener_stamp_weekly'),
+                    "final_signal": data.get('final_signal'),
+                    "score": data.get('score'),
+                    "total_conditions": data.get('score'),
+                    "stamp": data.get('stamp'),
+                    "stamp_daily": data.get('stamp_daily'),
+                    "stamp_weekly": data.get('stamp_weekly'),
                     "daily": {
-                        "rsi": data.get('screener_rsi'),
-                        "sma9_rsi": data.get('screener_sma9_rsi'),
-                        "wma45_rsi": data.get('screener_wma45_rsi'),
-                        "ema45_rsi": data.get('screener_ema45_rsi'),
-                        "sma9_close": data.get('screener_sma9_close'),
-                        "the_number": data.get('screener_the_number'),
+                        "rsi": data.get('rsi'),
+                        "sma9_rsi": data.get('sma9_rsi'),
+                        "wma45_rsi": data.get('wma45_rsi'),
+                        "ema45_rsi": data.get('ema45_rsi'),
+                        "sma9_close": data.get('sma9_close'),
+                        "the_number": data.get('the_number'),
                         "conditions": {
-                            "rsi_lt_80": data.get('screener_rsi_lt_80_d'),
-                            "sma9_rsi_lte_75": data.get('screener_sma9_rsi_lte_75_d'),
-                            "ema45_rsi_lte_70": data.get('screener_ema45_rsi_lte_70_d'),
-                            "rsi_55_70": data.get('screener_rsi_55_70_d'),
-                            "rsi_gt_wma45": data.get('screener_rsi_gt_wma45_d'),
-                            "sma9rsi_gt_wma45rsi": data.get('screener_sma9rsi_gt_wma45rsi_d'),
-                            "sma9_gt_tn": data.get('screener_sma9_gt_tn_d')
+                            "rsi_lt_80": data.get('rsi_lt_80_d'),
+                            "sma9_rsi_lte_75": data.get('sma9_rsi_lte_75_d'),
+                            "ema45_rsi_lte_70": data.get('ema45_rsi_lte_70_d'),
+                            "rsi_55_70": data.get('rsi_55_70'),
+                            "rsi_gt_wma45": data.get('rsi_gt_wma45_d'),
+                            "sma9rsi_gt_wma45rsi": data.get('sma9rsi_gt_wma45rsi_d'),
+                            "sma9_gt_tn": data.get('sma9_gt_tn_daily')
                         }
                     },
                     "weekly": {
-                        "rsi": data.get('screener_rsi_w'),
-                        "sma9_rsi": data.get('screener_sma9_rsi_w'),
-                        "wma45_rsi": data.get('screener_wma45_rsi_w'),
-                        "ema45_rsi": data.get('screener_ema45_rsi_w'),
-                        "sma9_close": data.get('screener_sma9_close_w'),
-                        "the_number": data.get('screener_the_number_w'),
+                        "rsi": data.get('rsi_w'),
+                        "sma9_rsi": data.get('sma9_rsi_w'),
+                        "wma45_rsi": data.get('wma45_rsi_w'),
+                        "ema45_rsi": data.get('ema45_rsi_w'),
+                        "sma9_close": data.get('sma9_close_w'),
+                        "the_number": data.get('the_number_w'),
                         "conditions": {
-                            "rsi_lt_80": data.get('screener_rsi_lt_80_w'),
-                            "sma9_rsi_lte_75": data.get('screener_sma9_rsi_lte_75_w'),
-                            "ema45_rsi_lte_70": data.get('screener_ema45_rsi_lte_70_w'),
-                            "rsi_gt_wma45": data.get('screener_rsi_gt_wma45_w'),
-                            "sma9rsi_gt_wma45rsi": data.get('screener_sma9rsi_gt_wma45rsi_w'),
-                            "sma9_gt_tn": data.get('screener_sma9_gt_tn_w')
+                            "rsi_lt_80": data.get('rsi_lt_80_w'),
+                            "sma9_rsi_lte_75": data.get('sma9_rsi_lte_75_w'),
+                            "ema45_rsi_lte_70": data.get('ema45_rsi_lte_70_w'),
+                            "rsi_gt_wma45": data.get('rsi_gt_wma45_w'),
+                            "sma9rsi_gt_wma45rsi": data.get('sma9rsi_gt_wma45rsi_w'),
+                            "sma9_gt_tn": data.get('sma9_gt_tn_weekly')
                         }
                     }
                 }
@@ -156,7 +195,7 @@ async def retrieve_stock_indicators(request: Request, symbol: str, db: Session =
 
 
 @router.get("/screener")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def get_screener_results(
     request: Request,
     min_score: Optional[int] = Query(None, ge=0, le=15, description="Minimum score (out of 15)"),
@@ -167,91 +206,50 @@ async def get_screener_results(
 ):
     """
     Run the full RSI Screener on all stocks.
+    Now reads from pre-computed database table instead of calculating on-the-fly.
     
     Returns stocks sorted by screener score.
     """
     try:
-        cache_key = "technical_screener:full_results"
-        cached_data = await redis_cache.get(cache_key)
-        
-        if cached_data:
-            all_results = cached_data
-        else:
-            # Get all symbols with company names
-            symbols_query = text("""
-                SELECT DISTINCT p.symbol, p.company_name
-                FROM prices p
-                WHERE p.date = (SELECT MAX(date) FROM prices)
-            """)
-            symbols_result = db.execute(symbols_query)
-            symbols_data = {row[0]: row[1] for row in symbols_result.fetchall()}
-            
-            all_results = []
-            
-            for symbol in symbols_data.keys():
-                try:
-                    data = calculate_all_indicators_for_stock(db, symbol)
-                    if data:
-                        item = {
-                            'symbol': symbol,
-                            'company_name': symbols_data.get(symbol),
-                            'date': data.get('date'),
-                            'close': data.get('close'),
-                            'rsi': data.get('screener_rsi'),
-                            'sma9_rsi': data.get('screener_sma9_rsi'),
-                            'wma45_rsi': data.get('screener_wma45_rsi'),
-                            'ema45_rsi': data.get('screener_ema45_rsi'),
-                            'sma9_close': data.get('screener_sma9_close'),
-                            'the_number': data.get('screener_the_number'),
-                            'stamp': data.get('screener_stamp', False),
-                            'stamp_daily': data.get('screener_stamp_daily', False),
-                            'stamp_weekly': data.get('screener_stamp_weekly', False),
-                            'rsi_55_70': data.get('screener_rsi_55_70_d', False),
-                            'sma9_gt_tn_daily': data.get('screener_sma9_gt_tn_d', False),
-                            'sma9_gt_tn_weekly': data.get('screener_sma9_gt_tn_w', False),
-                            'cci': data.get('trend_cci'),
-                            'aroon_up': data.get('trend_aroon_up'),
-                            'aroon_down': data.get('trend_aroon_down'),
-                            'trend_signal': data.get('trend_final_signal', False),
-                            'final_signal': data.get('screener_final_signal', False),
-                            'score': data.get('screener_score', 0),
-                        }
-                        all_results.append(item)
-                except Exception as e:
-                    print(f"Error processing {symbol}: {e}")
-                    continue
-            
-            # Cache for 1 hour (3600 seconds)
-            await redis_cache.set(cache_key, json.dumps(all_results, cls=DecimalEncoder), expire=3600)
-        
-        # Filter by min_score
-        filtered_results = all_results
-        if min_score is not None:
-            filtered_results = [r for r in filtered_results if r.get('score', 0) >= min_score]
-        
-        # Filter by passing_only
-        if passing_only:
-            filtered_results = [r for r in filtered_results if r.get('final_signal', False)]
-        
-        # Sort by score descending
-        filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
-        
-        # Count passing
-        passing_count = len([r for r in all_results if r.get('final_signal', False)])
-        
         # Get latest date
-        latest_date = all_results[0]['date'] if all_results else str(date.today())
+        latest_date_result = db.execute(text("SELECT MAX(date) FROM stock_indicators"))
+        latest_date = latest_date_result.scalar()
         
-        # Apply pagination
-        paginated = filtered_results[offset:offset + limit]
+        if not latest_date:
+            raise HTTPException(status_code=404, detail="No indicator data available")
+        
+        # Build base query
+        query = db.query(StockIndicator).filter(StockIndicator.date == latest_date)
+        
+        # Apply filters
+        if min_score is not None:
+            query = query.filter(StockIndicator.score >= min_score)
+        
+        if passing_only:
+            query = query.filter(StockIndicator.final_signal == True)
+        
+        # Get total counts (before pagination)
+        total_count = query.count()
+        passing_count = db.query(StockIndicator).filter(
+            StockIndicator.date == latest_date,
+            StockIndicator.final_signal == True
+        ).count()
+        
+        # Sort by score descending and apply pagination
+        indicators = query.order_by(desc(StockIndicator.score)).offset(offset).limit(limit).all()
+        
+        # Convert to dicts
+        all_results = [indicator_to_dict(ind) for ind in indicators]
         
         return {
-            "data": paginated,
-            "total_count": len(filtered_results),
+            "data": all_results,
+            "total_count": total_count,
             "passing_count": passing_count,
-            "date": latest_date
+            "date": str(latest_date)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -259,7 +257,7 @@ async def get_screener_results(
 
 
 @router.get("/quick-scan")
-@limiter.limit("20/minute")
+@limiter.limit("30/minute")
 async def quick_scan(
     request: Request,
     screener_type: str = Query(..., regex="^(rsi|trend)$"),
@@ -267,50 +265,46 @@ async def quick_scan(
 ):
     """
     Run a quick scan for a specific screener type.
+    Now reads from pre-computed database table.
     """
     try:
-        # Get all symbols
-        symbols_query = text("SELECT DISTINCT symbol, company_name FROM prices WHERE date = (SELECT MAX(date) FROM prices)")
-        result = db.execute(symbols_query)
-        symbols_data = {row[0]: row[1] for row in result.fetchall()}
+        # Get latest date
+        latest_date_result = db.execute(text("SELECT MAX(date) FROM stock_indicators"))
+        latest_date = latest_date_result.scalar()
         
-        passing = []
+        if not latest_date:
+            raise HTTPException(status_code=404, detail="No indicator data available")
         
-        for symbol, company_name in symbols_data.items():
-            try:
-                # Optimized: We might want separate specialized functions for quick scanning
-                # For now, reuse the main calculation but only extract what's needed
-                data = calculate_all_indicators_for_stock(db, symbol)
-                if not data:
-                    continue
-                
-                close_price = data.get('close')
-                
-                if screener_type == "rsi":
-                    # For RSI screener, return if score >= 10 (example threshold)
-                    if data.get('screener_score', 0) >= 10:
-                        passing.append({
-                            'symbol': symbol,
-                            'company_name': company_name,
-                            'close': close_price,
-                            'rsi': data.get('screener_rsi'),
-                            'score': data.get('screener_score', 0),
-                        })
-                elif screener_type == "trend":
-                    if data.get('trend_final_signal', False):
-                        passing.append({
-                            'symbol': symbol,
-                            'company_name': company_name,
-                            'close': close_price,
-                            'cci': data.get('trend_cci'),
-                            'aroon_up': data.get('trend_aroon_up'),
-                        })
-            except Exception as e:
-                continue
-        
-        # Sort by score/relevant metric
+        # Build query based on screener type
         if screener_type == "rsi":
-            passing.sort(key=lambda x: x.get('score', 0), reverse=True)
+            # RSI screener: score >= 10
+            indicators = db.query(StockIndicator).filter(
+                StockIndicator.date == latest_date,
+                StockIndicator.score >= 10
+            ).order_by(desc(StockIndicator.score)).all()
+            
+            passing = [{
+                'symbol': ind.symbol,
+                'company_name': ind.company_name,
+                'close': float(ind.close) if ind.close else None,
+                'rsi': float(ind.rsi_14) if ind.rsi_14 else None,
+                'score': int(ind.score) if ind.score else 0,
+            } for ind in indicators]
+            
+        elif screener_type == "trend":
+            # Trend screener: trend_signal = True
+            indicators = db.query(StockIndicator).filter(
+                StockIndicator.date == latest_date,
+                StockIndicator.trend_signal == True
+            ).order_by(desc(StockIndicator.cci)).all()
+            
+            passing = [{
+                'symbol': ind.symbol,
+                'company_name': ind.company_name,
+                'close': float(ind.close) if ind.close else None,
+                'cci': float(ind.cci) if ind.cci else None,
+                'aroon_up': float(ind.aroon_up) if ind.aroon_up else None,
+            } for ind in indicators]
         
         return {
             "screener_type": screener_type,
@@ -318,6 +312,8 @@ async def quick_scan(
             "stocks": passing
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -332,62 +328,40 @@ async def get_conditions_summary(
 ):
     """
     Get a summary of how many stocks pass each condition.
+    Now reads from pre-computed database table.
     """
     try:
-        # Get all symbols
-        symbols_query = text("SELECT DISTINCT symbol FROM prices WHERE date = (SELECT MAX(date) FROM prices)")
-        result = db.execute(symbols_query)
-        symbols = [row[0] for row in result.fetchall()]
+        # Get latest date
+        latest_date_result = db.execute(text("SELECT MAX(date) FROM stock_indicators"))
+        latest_date = latest_date_result.scalar()
         
-        # Initialize condition counts
+        if not latest_date:
+            raise HTTPException(status_code=404, detail="No indicator data available")
+        
+        # Get all indicators for latest date
+        indicators = db.query(StockIndicator).filter(StockIndicator.date == latest_date).all()
+        
+        total_processed = len(indicators)
+        
+        # Count conditions
         conditions = {
-            'stamp_daily': 0,
-            'stamp_weekly': 0,
-            'stamp': 0,
-            'sma9_gt_tn_d': 0,
-            'sma9_gt_tn_w': 0,
-            'rsi_lt_80_d': 0,
-            'rsi_lt_80_w': 0,
-            'sma9_rsi_lte_75_d': 0,
-            'sma9_rsi_lte_75_w': 0,
-            'ema45_rsi_lte_70_d': 0,
-            'ema45_rsi_lte_70_w': 0,
-            'rsi_55_70_d': 0,
-            'rsi_gt_wma45_d': 0,
-            'rsi_gt_wma45_w': 0,
-            'final_signal': 0,
-            'trend_signal': 0,
+            'stamp_daily': sum(1 for ind in indicators if ind.stamp_daily),
+            'stamp_weekly': sum(1 for ind in indicators if ind.stamp_weekly),
+            'stamp': sum(1 for ind in indicators if ind.stamp),
+            'sma9_gt_tn_d': sum(1 for ind in indicators if ind.sma9_gt_tn_daily),
+            'sma9_gt_tn_w': sum(1 for ind in indicators if ind.sma9_gt_tn_weekly),
+            'rsi_lt_80_d': sum(1 for ind in indicators if ind.rsi_lt_80_d),
+            'rsi_lt_80_w': sum(1 for ind in indicators if ind.rsi_lt_80_w),
+            'sma9_rsi_lte_75_d': sum(1 for ind in indicators if ind.sma9_rsi_lte_75_d),
+            'sma9_rsi_lte_75_w': sum(1 for ind in indicators if ind.sma9_rsi_lte_75_w),
+            'ema45_rsi_lte_70_d': sum(1 for ind in indicators if ind.ema45_rsi_lte_70_d),
+            'ema45_rsi_lte_70_w': sum(1 for ind in indicators if ind.ema45_rsi_lte_70_w),
+            'rsi_55_70_d': sum(1 for ind in indicators if ind.rsi_55_70),
+            'rsi_gt_wma45_d': sum(1 for ind in indicators if ind.rsi_gt_wma45_d),
+            'rsi_gt_wma45_w': sum(1 for ind in indicators if ind.rsi_gt_wma45_w),
+            'final_signal': sum(1 for ind in indicators if ind.final_signal),
+            'trend_signal': sum(1 for ind in indicators if ind.trend_signal),
         }
-        
-        total_processed = 0
-        
-        for symbol in symbols:
-            try:
-                data = calculate_all_indicators_for_stock(db, symbol)
-                if not data:
-                    continue
-                
-                total_processed += 1
-                
-                if data.get('screener_stamp_daily'): conditions['stamp_daily'] += 1
-                if data.get('screener_stamp_weekly'): conditions['stamp_weekly'] += 1
-                if data.get('screener_stamp'): conditions['stamp'] += 1
-                if data.get('screener_sma9_gt_tn_d'): conditions['sma9_gt_tn_d'] += 1
-                if data.get('screener_sma9_gt_tn_w'): conditions['sma9_gt_tn_w'] += 1
-                if data.get('screener_rsi_lt_80_d'): conditions['rsi_lt_80_d'] += 1
-                if data.get('screener_rsi_lt_80_w'): conditions['rsi_lt_80_w'] += 1
-                if data.get('screener_sma9_rsi_lte_75_d'): conditions['sma9_rsi_lte_75_d'] += 1
-                if data.get('screener_sma9_rsi_lte_75_w'): conditions['sma9_rsi_lte_75_w'] += 1
-                if data.get('screener_ema45_rsi_lte_70_d'): conditions['ema45_rsi_lte_70_d'] += 1
-                if data.get('screener_ema45_rsi_lte_70_w'): conditions['ema45_rsi_lte_70_w'] += 1
-                if data.get('screener_rsi_55_70_d'): conditions['rsi_55_70_d'] += 1
-                if data.get('screener_rsi_gt_wma45_d'): conditions['rsi_gt_wma45_d'] += 1
-                if data.get('screener_rsi_gt_wma45_w'): conditions['rsi_gt_wma45_w'] += 1
-                if data.get('screener_final_signal'): conditions['final_signal'] += 1
-                if data.get('trend_final_signal'): conditions['trend_signal'] += 1
-                
-            except Exception as e:
-                continue
         
         # Calculate percentages
         summary = []
@@ -403,6 +377,54 @@ async def get_conditions_summary(
             'conditions': summary
         }
         
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
+
+
+@router.get("/history/{symbol}")
+@limiter.limit("30/minute")
+async def get_stock_indicator_history(
+    request: Request,
+    symbol: str,
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db)
+):
+    """
+    Get historical indicators for a specific stock.
+    This is a NEW endpoint that leverages the historical data storage.
+    """
+    try:
+        # Get indicators for this symbol, ordered by date
+        indicators = db.query(StockIndicator).filter(
+            StockIndicator.symbol == symbol
+        ).order_by(desc(StockIndicator.date)).limit(days).all()
+        
+        if not indicators:
+            raise HTTPException(status_code=404, detail="No indicator data found for this symbol")
+        
+        history = [{
+            'date': str(ind.date),
+            'close': float(ind.close) if ind.close else None,
+            'rsi': float(ind.rsi_14) if ind.rsi_14 else None,
+            'score': int(ind.score) if ind.score else 0,
+            'stamp': bool(ind.stamp),
+            'final_signal': bool(ind.final_signal),
+            'trend_signal': bool(ind.trend_signal),
+        } for ind in indicators]
+        
+        return {
+            'symbol': symbol,
+            'company_name': indicators[0].company_name if indicators else None,
+            'data_points': len(history),
+            'history': history
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
