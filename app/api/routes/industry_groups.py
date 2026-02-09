@@ -10,22 +10,7 @@ from app.models.industry_group import IndustryGroupHistory
 
 router = APIRouter()
 
-class IndustryGroupResponse(BaseModel):
-    id: int
-    date: date
-    industry_group: str
-    sector: Optional[str]
-    number_of_stocks: int
-    market_value: Optional[float]
-    rs_score: Optional[float]
-    rank: Optional[int]
-    rank_1_week_ago: Optional[int]
-    rank_3_months_ago: Optional[int]
-    rank_6_months_ago: Optional[int]
-    ytd_change_percent: Optional[float]
-
-    class Config:
-        orm_mode = True
+from app.schemas.industry_group import IndustryGroupResponse, IndustryGroupStockResponse
 
 @router.get("/latest", response_model=List[IndustryGroupResponse])
 def get_latest_industry_groups(
@@ -58,13 +43,7 @@ from app.schemas.price import PriceResponse
 
 from app.models.rs_daily import RSDaily
 
-class IndustryGroupStockResponse(PriceResponse):
-    rs_rating: Optional[int] = None
-    rs_rating_1_week_ago: Optional[int] = None
-    rs_rating_4_weeks_ago: Optional[int] = None
-    rs_rating_3_months_ago: Optional[int] = None
-    rs_rating_6_months_ago: Optional[int] = None
-    rs_rating_1_year_ago: Optional[int] = None
+
 
 @router.get("/stocks", response_model=List[IndustryGroupStockResponse])
 def get_industry_group_stocks(

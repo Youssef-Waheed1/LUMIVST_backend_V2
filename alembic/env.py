@@ -10,6 +10,13 @@ from alembic import context
 from app.core.database import Base
 import app.models.user
 import app.models.contact
+import app.models.industry_group
+import app.models.price
+import app.models.financials
+import app.models.financial_metrics
+import app.models.official_filings
+import app.models.rs_daily
+import app.models.scraped_reports
 
 config = context.config
 from app.core.config import settings

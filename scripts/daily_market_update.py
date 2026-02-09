@@ -220,23 +220,32 @@ def update_daily(target_date_str=None):
 
         # 7. Calculate Industry Group Metrics
         # -------------------------------------------------------------------
-        logger.info("🏭 Calculating Industry Group Metrics (Market Cap, Rank, YTD)...")
+        logger.info("🏭 Calculating Industry Group Metrics (IBD Score, Rank, YTD)...")
         from scripts.calculate_industry_groups import IndustryGroupCalculator
         
-        # Re-using the same DB session might be tricky if calc opens its own, so we pass current db or let it handle it.
-        # The IndustryGroupCalculator takes a session in __init__.
-        # We should create a new instance using the current session 'db'
-        
         ig_calc = IndustryGroupCalculator(db)
-        # Load data for today
-        df_ig = ig_calc.load_metric_data(market_date)
-        if not df_ig.empty:
-            summary_ig = ig_calc.calculate_metrics(df_ig)
-            summary_ig = ig_calc.get_historical_ranks(summary_ig, market_date)
-            ig_calc.save(summary_ig, market_date)
-            logger.info("✅ Industry Group Metrics Updated.")
+        
+        # Step 1: Calculate group index prices
+        group_indices = ig_calc.calculate_group_index_prices(market_date)
+        
+        if group_indices:
+            # Step 2: Calculate IBD scores
+            group_df = ig_calc.calculate_ibd_group_score(group_indices)
+            
+            if not group_df.empty:
+                # Step 3: Prepare summary with YTD and details
+                summary_ig = ig_calc.prepare_summary_data(group_df, market_date)
+                
+                if not summary_ig.empty:
+                    # Step 4: Save to database
+                    ig_calc.save(summary_ig, market_date)
+                    logger.info(f"✅ Industry Group Metrics Updated ({len(summary_ig)} groups).")
+                else:
+                    logger.warning("⚠️ No summary data generated for Industry Groups.")
+            else:
+                logger.warning("⚠️ No IBD scores calculated for Industry Groups.")
         else:
-            logger.warning("⚠️ No data found for Industry Group Metrics calculation.")
+            logger.warning("⚠️ No group indices found for Industry Group Metrics calculation.")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 

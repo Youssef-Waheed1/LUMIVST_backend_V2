@@ -25,6 +25,12 @@ class IndustryGroupHistory(Base):
     
     ytd_change_percent = Column(Float)
     
+    # New Fields
+    letter_grade = Column(String(5))  # A+, A, B, etc.
+    change_vs_last_week = Column(Integer)  # Positive = Improvement
+    change_vs_3m_ago = Column(Integer)
+    change_vs_6m_ago = Column(Integer)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
