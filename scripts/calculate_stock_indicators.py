@@ -78,6 +78,8 @@ def calculate_and_store_indicators(db: Session, target_date: date = None):
                 'sma9_rsi': data.get('screener_sma9_rsi'),
                 'wma45_rsi': data.get('screener_wma45_rsi'),
                 'ema45_rsi': data.get('screener_ema45_rsi'),
+                'e45_cfg': data.get('screener_e45_cfg'),
+                'e20_sma3_rsi3': data.get('screener_e20_sma3_rsi3'),
                 
                 # The Number (Daily)
                 'sma9_close': data.get('screener_sma9_close'),
@@ -136,6 +138,8 @@ def calculate_and_store_indicators(db: Session, target_date: date = None):
                     'sma9_rsi': stmt.excluded.sma9_rsi,
                     'wma45_rsi': stmt.excluded.wma45_rsi,
                     'ema45_rsi': stmt.excluded.ema45_rsi,
+                    'e45_cfg': stmt.excluded.e45_cfg,
+                    'e20_sma3_rsi3': stmt.excluded.e20_sma3_rsi3,
                     'sma9_close': stmt.excluded.sma9_close,
                     'the_number': stmt.excluded.the_number,
                     'stamp': stmt.excluded.stamp,

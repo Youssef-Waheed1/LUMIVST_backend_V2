@@ -26,6 +26,8 @@ class StockIndicator(Base):
     sma9_rsi = Column(Numeric(5, 2), nullable=True)
     wma45_rsi = Column(Numeric(5, 2), nullable=True)
     ema45_rsi = Column(Numeric(5, 2), nullable=True)
+    e45_cfg = Column(Numeric(5, 2), nullable=True)
+    e20_sma3_rsi3 = Column(Numeric(5, 2), nullable=True)
     
     # The Number (Daily)
     sma9_close = Column(Numeric(10, 2), nullable=True)

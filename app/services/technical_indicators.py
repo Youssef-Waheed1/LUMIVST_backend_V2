@@ -438,6 +438,8 @@ class RSIScreener:
             'sma9_close': round(sma9_close.iloc[latest], 2) if not pd.isna(sma9_close.iloc[latest]) else None,
             
             # Stamp
+            'e45_cfg': round(ema45_cfg.iloc[latest], 2) if not pd.isna(ema45_cfg.iloc[latest]) else None,
+            'e20_sma3_rsi3': round(ema20_sma3.iloc[latest], 2) if not pd.isna(ema20_sma3.iloc[latest]) else None,
             'stamp_daily': stamp_daily,
             'stamp_weekly': stamp_weekly,
             'stamp': stamp,

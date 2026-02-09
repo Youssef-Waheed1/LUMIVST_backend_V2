@@ -40,6 +40,8 @@ def indicator_to_dict(ind: StockIndicator) -> dict:
         'sma9_rsi': float(ind.sma9_rsi) if ind.sma9_rsi else None,
         'wma45_rsi': float(ind.wma45_rsi) if ind.wma45_rsi else None,
         'ema45_rsi': float(ind.ema45_rsi) if ind.ema45_rsi else None,
+        'e45_cfg': float(ind.e45_cfg) if ind.e45_cfg else None,
+        'e20_sma3_rsi3': float(ind.e20_sma3_rsi3) if ind.e20_sma3_rsi3 else None,
         
         # The Number
         'sma9_close': float(ind.sma9_close) if ind.sma9_close else None,
@@ -122,9 +124,9 @@ async def retrieve_stock_indicators(request: Request, symbol: str, db: Session =
                 },
                 "stamp": {
                     "s9_rsi": data.get('sma9_rsi'),
-                    "e45_cfg": None,
+                    "e45_cfg": data.get('e45_cfg'),
                     "e45_rsi": data.get('ema45_rsi'),
-                    "e20_sma3_rsi3": None
+                    "e20_sma3_rsi3": data.get('e20_sma3_rsi3')
                 },
                 "trend_screener": {
                     "signal": data.get('trend_signal'),
@@ -410,6 +412,8 @@ async def get_stock_indicator_history(
             'date': str(ind.date),
             'close': float(ind.close) if ind.close else None,
             'rsi': float(ind.rsi_14) if ind.rsi_14 else None,
+            'sma9_rsi': float(ind.sma9_rsi) if ind.sma9_rsi else None,
+            'wma45_rsi': float(ind.wma45_rsi) if ind.wma45_rsi else None,
             'score': int(ind.score) if ind.score else 0,
             'stamp': bool(ind.stamp),
             'final_signal': bool(ind.final_signal),
