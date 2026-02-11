@@ -1,14 +1,5 @@
-from sqlalchemy import Column, Integer, String, Float, Enum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, UniqueConstraint
 from app.core.database import Base
-import enum
-
-class FinancialPeriod(str, enum.Enum):
-    ANNUAL = 'Annual'
-    Q1 = 'Q1'
-    Q2 = 'Q2'
-    Q3 = 'Q3'
-    Q4 = 'Q4'
-    UNKNOWN = 'Unknown'
 
 class CompanyFinancialMetric(Base):
     __tablename__ = "company_financial_metrics"
@@ -16,7 +7,7 @@ class CompanyFinancialMetric(Base):
     id = Column(Integer, primary_key=True, index=True)
     company_symbol = Column(String, index=True)
     year = Column(Integer, index=True)
-    period = Column(Enum(FinancialPeriod), index=True)
+    period = Column(String(20), index=True)  # 'Annual', 'Q1', 'Q2', 'Q3', 'Q4'
     
     # The metric name (cleaned, snake_case) e.g., 'total_assets', 'net_profit'
     metric_name = Column(String, index=True)

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import stocks, financials, cache, auth, contact, rs, rs_v2, admin, scraper, official_filings, financial_details, prices, technical_screener
+from app.api.routes import stocks, financials, cache, auth, contact, rs, rs_v2, admin, scraper, official_filings, financial_details, prices, technical_screener, financial_metrics
 
 # ... (Previous code)
 
@@ -94,6 +94,7 @@ app.include_router(prices.router, prefix="/api") # /api/prices/latest
 from app.api.routes import industry_groups
 app.include_router(industry_groups.router, prefix="/api/industry-groups", tags=["Industry Groups"])
 app.include_router(technical_screener.router, prefix="/api", dependencies=protected_dependencies)  # Technical Screener
+app.include_router(financial_metrics.router, prefix="/api", tags=["Financial Metrics"], dependencies=protected_dependencies)
 
 # Event handlers
 @app.on_event("startup")

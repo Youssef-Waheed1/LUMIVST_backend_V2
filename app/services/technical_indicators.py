@@ -8,6 +8,7 @@ Implements:
 3. Stamp Indicator
 4. Trend Screener (Aymcfa Trend Screener)
 5. RSI Screener (Aymcfa RSI Screener)
+6. CFG Analysis
 """
 
 import pandas as pd
@@ -38,12 +39,16 @@ def ema(series: pd.Series, period: int) -> pd.Series:
 
 
 def rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    """Relative Strength Index"""
+    """Relative Strength Index using proper RMA (Relative Moving Average)"""
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period, min_periods=1).mean()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
     
-    rs = gain / loss.replace(0, np.nan)
+    # Use EWM (exponential moving average) for RMA with alpha = 1/period
+    avg_gain = gain.ewm(span=period, adjust=False).mean()
+    avg_loss = loss.ewm(span=period, adjust=False).mean()
+    
+    rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi_values = 100 - (100 / (1 + rs))
     return rsi_values.fillna(50)
 
@@ -153,14 +158,15 @@ class StampIndicator:
         rsi_14 = rsi(close, 14)
         rsi_3 = rsi(close, 3)
         
-        # TradingView: a = rsi14 - rsi14[9] + ta.sma(rsi3, 3)
-        # rsi14[9] means: take the RSI value from 9 bars ago (shift the result)
+        # TradingView: a = rsi14 - ta.rsi(close[9], 14) + ta.sma(rsi3, 3)
+        # ta.rsi(close[9], 14) means calculating RSI on the close series shifted by 9
         sma3_rsi3 = sma(rsi_3, 3)
         
-        # Correct: Shift the already-calculated RSI by 9 periods
-        rsi_14_shifted = rsi_14.shift(9)
+        # Correct: Calculate RSI on shifted closes (Pine Script logic)
+        # This is different from rsi(close).shift(9) because of Wilder's smoothing state depending on the path
+        rsi_14_on_shifted_close = rsi(close.shift(9), 14)
         
-        a = rsi_14 - rsi_14_shifted + sma3_rsi3
+        a = rsi_14 - rsi_14_on_shifted_close + sma3_rsi3
         
         s9_rsi = sma(rsi_14, 9)
         e45_cfg = ema(a, 45)
@@ -174,6 +180,136 @@ class StampIndicator:
             'e45_cfg': round(e45_cfg.iloc[latest], 2) if not pd.isna(e45_cfg.iloc[latest]) else None,
             'e45_rsi': round(e45_rsi.iloc[latest], 2) if not pd.isna(e45_rsi.iloc[latest]) else None,
             'e20_sma3_rsi3': round(e20_sma3.iloc[latest], 2) if not pd.isna(e20_sma3.iloc[latest]) else None,
+            'cfg': round(a.iloc[latest], 2) if not pd.isna(a.iloc[latest]) else None,
+            'rsi_14_minus_9': round(rsi_14.iloc[latest] - rsi_14_on_shifted_close.iloc[latest], 2) if not pd.isna(rsi_14.iloc[latest]) and not pd.isna(rsi_14_on_shifted_close.iloc[latest]) else None,
+            'sma3_rsi3': round(sma3_rsi3.iloc[latest], 2) if not pd.isna(sma3_rsi3.iloc[latest]) else None,
+        }
+
+
+class CFGIndicator:
+    """
+    CFG (Custom Formula Generator) Analysis
+    A = RSI(14) - RSI(14)[9] + SMA(RSI(3), 3)
+    """
+    
+    @staticmethod
+    def calculate(df: pd.DataFrame) -> Dict[str, Any]:
+        """Correct CFG calculation matching PineScript"""
+        close = df['close'].values
+        
+        # Calculate using new functions
+        def calculate_rsi_window_numpy(prices, end_idx, period=14):
+            if end_idx < period:
+                return None
+            
+            # We need period+1 prices to get period deltas
+            start_idx = end_idx - period
+            if start_idx < 0:
+                return None
+            
+            window = prices[start_idx:end_idx+1]
+            if len(window) < period + 1:
+                return None
+                
+            delta = np.diff(window)
+            gain = np.where(delta > 0, delta, 0)
+            loss = np.where(delta < 0, -delta, 0)
+            
+            # Simple average for first value (Wilder's original method uses simple average for first period)
+            # PineScript's rsi() function uses Wilder's smoothing.
+            # But here we are calculating a single point.
+            # If we want exact match with PineScript 'rsi(src, len)', it's recursive.
+            # But 'rsi_window' usually implies we treat this window as the history.
+            # If we treat it as initialization:
+            avg_gain = np.mean(gain[:period])
+            avg_loss = np.mean(loss[:period])
+            
+            if avg_loss == 0:
+                return 100.0
+            rs = avg_gain / avg_loss
+            return 100.0 - (100.0 / (1.0 + rs))
+        
+        # CFG Calculation
+        cfg_values = []
+        rsi3_series = [] # To store RSI(3) for SMA calculation
+        
+        # Pre-calculate RSI(3) for all points first or inside loop?
+        # User code calculates rsi3 inside loop:
+        # for j in range(max(0, i-2), i+1): rsi3 = calculate_rsi_window_numpy(close, j, 3)
+        # This is O(N*3*3) which is fine. O(N).
+        
+        for i in range(len(close)):
+            if i < 9:
+                cfg_values.append(None)
+                continue
+                
+            # 1. RSI(14) Current
+            rsi14_current = calculate_rsi_window_numpy(close, i, 14)
+            
+            # 2. ta.rsi(close[9], 14) -> RSI of window ending at i-9
+            rsi14_shifted = calculate_rsi_window_numpy(close, i-9, 14)
+            
+            if rsi14_current is None or rsi14_shifted is None:
+                cfg_values.append(None)
+                continue
+            
+            # 3. SMA(RSI(3), 3)
+            # Need RSI(3) for j=i, i-1, i-2
+            rsi3_vals = []
+            for j in range(i-2, i+1):
+                if j < 0: continue
+                r3 = calculate_rsi_window_numpy(close, j, 3)
+                if r3 is not None:
+                    rsi3_vals.append(r3)
+            
+            sma3_rsi3 = np.mean(rsi3_vals) if len(rsi3_vals) == 3 else None
+            
+            if sma3_rsi3 is not None:
+                cfg = rsi14_current - rsi14_shifted + sma3_rsi3
+                cfg_values.append(cfg)
+            else:
+                cfg_values.append(None)
+        
+        cfg_series = pd.Series(cfg_values, index=df.index)
+        
+        # Averages
+        cfg_sma9 = sma(cfg_series, 9)
+        cfg_sma20 = sma(cfg_series, 20)
+        cfg_ema20 = ema(cfg_series, 20)
+        cfg_ema45 = ema(cfg_series, 45)
+        
+        latest = len(df) - 1
+        
+        # Ensure we have values
+        cfg_val = cfg_series.iloc[latest]
+        
+        # Recalculate components for display
+        rsi_3_val = calculate_rsi_window_numpy(close, latest, 3)
+        
+        # SMA3(RSI3)
+        rsi3_vals_latest = []
+        for j in range(latest-2, latest+1):
+            if j >= 0:
+                r3 = calculate_rsi_window_numpy(close, j, 3)
+                if r3 is not None: rsi3_vals_latest.append(r3)
+        sma3_rsi3_val = np.mean(rsi3_vals_latest) if len(rsi3_vals_latest) == 3 else None
+        
+        rsi14_latest = calculate_rsi_window_numpy(close, latest, 14)
+        rsi14_shifted_latest = calculate_rsi_window_numpy(close, latest-9, 14)
+        rsi_14_minus_9_val = (rsi14_latest - rsi14_shifted_latest) if (rsi14_latest is not None and rsi14_shifted_latest is not None) else None
+        
+        return {
+            'cfg': round(cfg_val, 2) if not pd.isna(cfg_val) else None,
+            'cfg_sma9': round(cfg_sma9.iloc[latest], 2) if not pd.isna(cfg_sma9.iloc[latest]) else None,
+            'cfg_sma20': round(cfg_sma20.iloc[latest], 2) if not pd.isna(cfg_sma20.iloc[latest]) else None,
+            'cfg_ema20': round(cfg_ema20.iloc[latest], 2) if not pd.isna(cfg_ema20.iloc[latest]) else None,
+            'cfg_ema45': round(cfg_ema45.iloc[latest], 2) if not pd.isna(cfg_ema45.iloc[latest]) else None,
+            'cfg_gt_50': cfg_val > 50 if not pd.isna(cfg_val) else False,
+            'cfg_ema45_gt_50': cfg_ema45.iloc[latest] > 50 if not pd.isna(cfg_ema45.iloc[latest]) else False,
+            'cfg_ema20_gt_50': cfg_ema20.iloc[latest] > 50 if not pd.isna(cfg_ema20.iloc[latest]) else False,
+            'rsi_3': round(rsi_3_val, 2) if rsi_3_val is not None else None,
+            'sma3_rsi3': round(sma3_rsi3_val, 2) if sma3_rsi3_val is not None else None,
+            'rsi_14_minus_9': round(rsi_14_minus_9_val, 2) if rsi_14_minus_9_val is not None else None,
         }
 
 
@@ -213,17 +349,18 @@ class TrendScreener:
         latest = len(df) - 1
         
         # Conditions
-        cond1 = close.iloc[latest] > sma18.iloc[latest]  # Price > 18 SMA
-        cond3 = (sma4.iloc[latest] > sma9.iloc[latest]) and (sma9.iloc[latest] > sma18.iloc[latest])
-        cond6 = cci_14.iloc[latest] > 100
-        cond7 = cci_ema20.iloc[latest] > 0
-        cond9 = aroon_up.iloc[latest] > 70 if not pd.isna(aroon_up.iloc[latest]) else False
-        cond10 = aroon_down.iloc[latest] < 30 if not pd.isna(aroon_down.iloc[latest]) else False
+        price_gt_sma18 = close.iloc[latest] > sma18.iloc[latest]
+        sma_trend_daily = (sma4.iloc[latest] > sma9.iloc[latest]) and (sma9.iloc[latest] > sma18.iloc[latest])
+        cci_gt_100 = cci_14.iloc[latest] > 100
+        cci_ema20_gt_0_daily = cci_ema20.iloc[latest] > 0
+        aroon_up_gt_70 = aroon_up.iloc[latest] > 70 if not pd.isna(aroon_up.iloc[latest]) else False
+        aroon_down_lt_30 = aroon_down.iloc[latest] < 30 if not pd.isna(aroon_down.iloc[latest]) else False
         
         # Weekly conditions (if weekly data provided)
-        cond2 = True
-        cond4 = True
-        cond8 = True
+        price_gt_sma9_weekly = True
+        sma_trend_weekly = True
+        cci_ema20_gt_0_weekly = True
+        cci_ema20_w = None
         
         if weekly_df is not None and len(weekly_df) > 0:
             w_close = weekly_df['close']
@@ -238,27 +375,33 @@ class TrendScreener:
             
             w_latest = len(weekly_df) - 1
             
-            cond2 = w_close.iloc[w_latest] > sma9_w.iloc[w_latest]
-            cond4 = (sma4_w.iloc[w_latest] > sma9_w.iloc[w_latest]) and (sma9_w.iloc[w_latest] > sma18_w.iloc[w_latest])
-            cond8 = cci_ema20_w.iloc[w_latest] > 0
+            price_gt_sma9_weekly = w_close.iloc[w_latest] > sma9_w.iloc[w_latest]
+            sma_trend_weekly = (sma4_w.iloc[w_latest] > sma9_w.iloc[w_latest]) and (sma9_w.iloc[w_latest] > sma18_w.iloc[w_latest])
+            cci_ema20_gt_0_weekly = cci_ema20_w.iloc[w_latest] > 0 if not pd.isna(cci_ema20_w.iloc[w_latest]) else False
+            cci_ema20_w = round(cci_ema20_w.iloc[w_latest], 2) if not pd.isna(cci_ema20_w.iloc[w_latest]) else None
         
         # Final signal
-        final_signal = all([cond1, cond2, cond3, cond4, cond6, cond7, cond8, cond9, cond10])
+        final_signal = all([
+            price_gt_sma18, price_gt_sma9_weekly, sma_trend_daily, sma_trend_weekly,
+            cci_gt_100, cci_ema20_gt_0_daily, cci_ema20_gt_0_weekly,
+            aroon_up_gt_70, aroon_down_lt_30
+        ])
         
         return {
-            'price_gt_sma18': cond1,
-            'price_gt_sma9_weekly': cond2,
-            'sma_trend_daily': cond3,
-            'sma_trend_weekly': cond4,
-            'cci_gt_100': cond6,
-            'cci_ema20_gt_0_daily': cond7,
-            'cci_ema20_gt_0_weekly': cond8,
-            'aroon_up_gt_70': cond9,
-            'aroon_down_lt_30': cond10,
+            'price_gt_sma18': price_gt_sma18,
+            'price_gt_sma9_weekly': price_gt_sma9_weekly,
+            'sma_trend_daily': sma_trend_daily,
+            'sma_trend_weekly': sma_trend_weekly,
+            'cci_gt_100': cci_gt_100,
+            'cci_ema20_gt_0_daily': cci_ema20_gt_0_daily,
+            'cci_ema20_gt_0_weekly': cci_ema20_gt_0_weekly,
+            'aroon_up_gt_70': aroon_up_gt_70,
+            'aroon_down_lt_30': aroon_down_lt_30,
             'final_signal': final_signal,
             # Raw values
             'cci': round(cci_14.iloc[latest], 2) if not pd.isna(cci_14.iloc[latest]) else None,
             'cci_ema20': round(cci_ema20.iloc[latest], 2) if not pd.isna(cci_ema20.iloc[latest]) else None,
+            'cci_ema20_w': cci_ema20_w,
             'aroon_up': round(aroon_up.iloc[latest], 2) if not pd.isna(aroon_up.iloc[latest]) else None,
             'aroon_down': round(aroon_down.iloc[latest], 2) if not pd.isna(aroon_down.iloc[latest]) else None,
         }
@@ -291,11 +434,10 @@ class RSIScreener:
         rsi_3 = rsi(close, 3)
         sma3_rsi3 = sma(rsi_3, 3)
         
-        # TradingView: a = rsi14 - rsi14[9] + ta.sma(rsi3, 3)
-        # rsi14[9] means: take the RSI value from 9 bars ago (shift the result)
-        # Correct: Shift the already-calculated RSI by 9 periods
-        rsi_14_shifted = rsi_14.shift(9)
-        cfg = rsi_14 - rsi_14_shifted + sma3_rsi3
+        # TradingView: a = rsi14 - ta.rsi(close[9], 14) + ta.sma(rsi3, 3)
+        # Correct: RSI on shifted close series
+        rsi_14_on_shifted_close = rsi(close.shift(9), 14)
+        cfg = rsi_14 - rsi_14_on_shifted_close + sma3_rsi3
         
         sma9_rsi = sma(rsi_14, 9)
         wma45_rsi = wma(rsi_14, 45)
@@ -313,6 +455,8 @@ class RSIScreener:
         high65 = sma(high, 65)
         low65 = sma(low, 65)
         the_number = (high13 + low13 + high65 + low65) / 4
+        the_number_hl = (high13 + high65) / 2
+        the_number_ll = (low13 + low65) / 2
         
         latest = len(df) - 1
         
@@ -342,7 +486,18 @@ class RSIScreener:
         rsi_gt_wma45_w = True
         sma9rsi_gt_wma45rsi_w = True
         
+        # CFG calculations
+        cfg_sma9 = sma(cfg, 9)
+        cfg_sma20 = sma(cfg, 20)
+        cfg_ema20 = ema(cfg, 20)
+        cfg_ema45 = ema(cfg, 45)
+        
+        cfg_gt_50 = cfg.iloc[latest] > 50 if not pd.isna(cfg.iloc[latest]) else False
+        cfg_ema45_gt_50 = cfg_ema45.iloc[latest] > 50 if not pd.isna(cfg_ema45.iloc[latest]) else False
+        cfg_ema20_gt_50 = cfg_ema20.iloc[latest] > 50 if not pd.isna(cfg_ema20.iloc[latest]) else False
+        
         weekly_data = {}
+        cfg_weekly_data = {}
         
         if weekly_df is not None and len(weekly_df) > 0:
             w_close = weekly_df['close']
@@ -354,9 +509,9 @@ class RSIScreener:
             w_rsi_3 = rsi(w_close, 3)
             w_sma3_rsi3 = sma(w_rsi_3, 3)
             
-            # TradingView: rsi14[9] = shift the already-calculated RSI by 9 periods
-            w_rsi_14_shifted = w_rsi_14.shift(9)
-            w_cfg = w_rsi_14 - w_rsi_14_shifted + w_sma3_rsi3
+            # TradingView: rsi14[9] -> rsi(close[9], 14)
+            w_rsi_14_on_shifted_close = rsi(w_close.shift(9), 14)
+            w_cfg = w_rsi_14 - w_rsi_14_on_shifted_close + w_sma3_rsi3
             
             w_sma9_rsi = sma(w_rsi_14, 9)
             w_wma45_rsi = wma(w_rsi_14, 45)
@@ -372,6 +527,11 @@ class RSIScreener:
             w_high65 = sma(w_high, 65)
             w_low65 = sma(w_low, 65)
             w_the_number = (w_high13 + w_low13 + w_high65 + w_low65) / 4
+            
+            # Weekly CFG
+            w_cfg_sma9 = sma(w_cfg, 9)
+            w_cfg_ema20 = ema(w_cfg, 20)
+            w_cfg_ema45 = ema(w_cfg, 45)
             
             w_latest = len(weekly_df) - 1
             
@@ -398,6 +558,19 @@ class RSIScreener:
                 'ema45_rsi_w': round(w_ema45_rsi.iloc[w_latest], 2) if not pd.isna(w_ema45_rsi.iloc[w_latest]) else None,
                 'the_number_w': round(w_the_number.iloc[w_latest], 2) if not pd.isna(w_the_number.iloc[w_latest]) else None,
                 'sma9_close_w': round(w_sma9_close.iloc[w_latest], 2) if not pd.isna(w_sma9_close.iloc[w_latest]) else None,
+            }
+            
+            cfg_weekly_data = {
+                'cfg_w': round(w_cfg.iloc[w_latest], 2) if not pd.isna(w_cfg.iloc[w_latest]) else None,
+                'cfg_sma9_w': round(w_cfg_sma9.iloc[w_latest], 2) if not pd.isna(w_cfg_sma9.iloc[w_latest]) else None,
+                'cfg_ema20_w': round(w_cfg_ema20.iloc[w_latest], 2) if not pd.isna(w_cfg_ema20.iloc[w_latest]) else None,
+                'cfg_ema45_w': round(w_cfg_ema45.iloc[w_latest], 2) if not pd.isna(w_cfg_ema45.iloc[w_latest]) else None,
+                'cfg_gt_50_w': w_cfg.iloc[w_latest] > 50 if not pd.isna(w_cfg.iloc[w_latest]) else False,
+                'cfg_ema45_gt_50_w': w_cfg_ema45.iloc[w_latest] > 50 if not pd.isna(w_cfg_ema45.iloc[w_latest]) else False,
+                'cfg_ema20_gt_50_w': w_cfg_ema20.iloc[w_latest] > 50 if not pd.isna(w_cfg_ema20.iloc[w_latest]) else False,
+                'rsi_3_w': round(w_rsi_3.iloc[w_latest], 2) if not pd.isna(w_rsi_3.iloc[w_latest]) else None,
+                'sma3_rsi3_w': round(w_sma3_rsi3.iloc[w_latest], 2) if not pd.isna(w_sma3_rsi3.iloc[w_latest]) else None,
+                'rsi_14_minus_9_w': round(w_rsi_14.iloc[w_latest] - w_rsi_14_on_shifted_close.iloc[w_latest], 2) if not pd.isna(w_rsi_14.iloc[w_latest]) and not pd.isna(w_rsi_14_on_shifted_close.iloc[w_latest]) else None,
             }
         
         # Full STAMP
@@ -435,6 +608,8 @@ class RSIScreener:
             'wma45_rsi': round(wma45_rsi.iloc[latest], 2) if not pd.isna(wma45_rsi.iloc[latest]) else None,
             'ema45_rsi': round(ema45_rsi.iloc[latest], 2) if not pd.isna(ema45_rsi.iloc[latest]) else None,
             'the_number': round(the_number.iloc[latest], 2) if not pd.isna(the_number.iloc[latest]) else None,
+            'the_number_hl': round(the_number_hl.iloc[latest], 2) if not pd.isna(the_number_hl.iloc[latest]) else None,
+            'the_number_ll': round(the_number_ll.iloc[latest], 2) if not pd.isna(the_number_ll.iloc[latest]) else None,
             'sma9_close': round(sma9_close.iloc[latest], 2) if not pd.isna(sma9_close.iloc[latest]) else None,
             
             # Stamp
@@ -445,21 +620,36 @@ class RSIScreener:
             'stamp': stamp,
             
             # Conditions Daily
-            'sma9_gt_tn_d': sma9_gt_tn_d,
+            'sma9_gt_tn_daily': sma9_gt_tn_d,
             'rsi_lt_80_d': rsi_lt_80_d,
             'sma9_rsi_lte_75_d': sma9_rsi_lte_75_d,
             'ema45_rsi_lte_70_d': ema45_rsi_lte_70_d,
-            'rsi_55_70_d': rsi_55_70_d,
+            'rsi_55_70': rsi_55_70_d,
             'rsi_gt_wma45_d': rsi_gt_wma45_d,
             'sma9rsi_gt_wma45rsi_d': sma9rsi_gt_wma45rsi_d,
             
             # Conditions Weekly
-            'sma9_gt_tn_w': sma9_gt_tn_w,
+            'sma9_gt_tn_weekly': sma9_gt_tn_w,
             'rsi_lt_80_w': rsi_lt_80_w,
             'sma9_rsi_lte_75_w': sma9_rsi_lte_75_w,
             'ema45_rsi_lte_70_w': ema45_rsi_lte_70_w,
             'rsi_gt_wma45_w': rsi_gt_wma45_w,
             'sma9rsi_gt_wma45rsi_w': sma9rsi_gt_wma45rsi_w,
+            
+            # CFG values
+            'cfg': round(cfg.iloc[latest], 2) if not pd.isna(cfg.iloc[latest]) else None,
+            'cfg_sma9': round(cfg_sma9.iloc[latest], 2) if not pd.isna(cfg_sma9.iloc[latest]) else None,
+            'cfg_sma20': round(cfg_sma20.iloc[latest], 2) if not pd.isna(cfg_sma20.iloc[latest]) else None,
+            'cfg_ema20': round(cfg_ema20.iloc[latest], 2) if not pd.isna(cfg_ema20.iloc[latest]) else None,
+            'cfg_ema45': round(cfg_ema45.iloc[latest], 2) if not pd.isna(cfg_ema45.iloc[latest]) else None,
+            'cfg_gt_50': cfg_gt_50,
+            'cfg_ema45_gt_50': cfg_ema45_gt_50,
+            'cfg_ema20_gt_50': cfg_ema20_gt_50,
+            
+            # CFG components
+            'rsi_3': round(rsi_3.iloc[latest], 2) if not pd.isna(rsi_3.iloc[latest]) else None,
+            'sma3_rsi3': round(sma3_rsi3.iloc[latest], 2) if not pd.isna(sma3_rsi3.iloc[latest]) else None,
+            'rsi_14_minus_9': round(rsi_14.iloc[latest] - rsi_14_on_shifted_close.iloc[latest], 2) if not pd.isna(rsi_14.iloc[latest]) and not pd.isna(rsi_14_on_shifted_close.iloc[latest]) else None,
             
             # Final
             'final_signal': final_signal,
@@ -467,7 +657,8 @@ class RSIScreener:
             'total_conditions': 15,
             
             # Weekly raw values
-            **weekly_data
+            **weekly_data,
+            **cfg_weekly_data
         }
         
         return result
@@ -549,6 +740,10 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str) -> Dict[str, An
     # Stamp Indicator
     stamp_data = StampIndicator.calculate(daily_df)
     result.update({f'stamp_{k}': v for k, v in stamp_data.items()})
+    
+    # CFG Indicator
+    cfg_data = CFGIndicator.calculate(daily_df)
+    result.update({f'cfg_{k}': v for k, v in cfg_data.items()})
     
     # Trend Screener
     trend_data = TrendScreener.calculate(daily_df, weekly_df)
