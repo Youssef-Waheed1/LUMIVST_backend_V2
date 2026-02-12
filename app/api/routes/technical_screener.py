@@ -90,25 +90,29 @@ def indicator_to_dict(ind: StockIndicator) -> dict:
         'trend_signal': bool(ind.trend_signal),
         
         # ===== 5. RSI Screener =====
-        'wma45_rsi_screener': float(ind.wma45_rsi_screener) if ind.wma45_rsi_screener else None,
+        'wma45_rsi_screener': float(ind.wma45_rsi) if ind.wma45_rsi else None,
         'ema45_rsi': float(ind.ema45_rsi) if ind.ema45_rsi else None,
-        'ema45_cfg': float(ind.ema45_cfg) if ind.ema45_cfg else None,
-        'e45_cfg': float(ind.ema45_cfg) if ind.ema45_cfg else None,  # ✅ Alias for Frontend
-        'ema20_sma3': float(ind.ema20_sma3) if ind.ema20_sma3 else None,
-        'e20_sma3_rsi3': float(ind.ema20_sma3) if ind.ema20_sma3 else None,  # ✅ Alias for Frontend
+        'cfg_ema45': float(ind.cfg_ema45) if ind.cfg_ema45 is not None else None,
+        'e45_cfg': float(ind.cfg_ema45) if ind.cfg_ema45 is not None else None,  # ✅ Alias for Frontend
+        'cfg_wma45': float(ind.cfg_wma45) if ind.cfg_wma45 is not None else None,
+        'w45_cfg': float(ind.cfg_wma45) if ind.cfg_wma45 is not None else None,  # ✅ Alias for Frontend
+        'ema20_sma3': float(ind.ema20_sma3) if ind.ema20_sma3 is not None else None,
+        'e20_sma3_rsi3': float(ind.ema20_sma3) if ind.ema20_sma3 is not None else None,  # ✅ Alias for Frontend
         'wma45_close': float(ind.wma45_close) if ind.wma45_close else None,
         
         # Weekly Values
         'rsi_w': float(ind.rsi_w) if ind.rsi_w else None,
-        'rsi_w_9_weeks_ago': float(ind.rsi_w) if ind.rsi_w else None,  # ✅ Placeholder for Frontend
         'rsi_3_w': float(ind.rsi_3_w) if ind.rsi_3_w else None,
         'sma3_rsi3_w': float(ind.sma3_rsi3_w) if ind.sma3_rsi3_w else None,
         'sma9_rsi_w': float(ind.sma9_rsi_w) if ind.sma9_rsi_w else None,
         'wma45_rsi_w': float(ind.wma45_rsi_w) if ind.wma45_rsi_w else None,
         'ema45_rsi_w': float(ind.ema45_rsi_w) if ind.ema45_rsi_w else None,
-        'ema45_cfg_w': float(ind.ema45_cfg_w) if ind.ema45_cfg_w else None,
-        'ema20_sma3_w': float(ind.ema20_sma3_w) if ind.ema20_sma3_w else None,
-        'ema20_sma3_rsi3_w': float(ind.ema20_sma3_w) if ind.ema20_sma3_w else None,  # ✅ Alias for Frontend
+        'cfg_ema45_w': float(ind.cfg_ema45_w) if ind.cfg_ema45_w is not None else None,
+        'ema45_cfg_w': float(ind.cfg_ema45_w) if ind.cfg_ema45_w is not None else None,
+        'cfg_wma45_w': float(ind.cfg_wma45_w) if ind.cfg_wma45_w is not None else None,
+        'wma45_cfg_w': float(ind.cfg_wma45_w) if ind.cfg_wma45_w is not None else None,  # ✅ Alias for Frontend
+        'ema20_sma3_w': float(ind.ema20_sma3_w) if ind.ema20_sma3_w is not None else None,
+        'ema20_sma3_rsi3_w': float(ind.ema20_sma3_w) if ind.ema20_sma3_w is not None else None,  # ✅ Alias for Frontend
         'sma9_close_w': float(ind.sma9_close_w) if ind.sma9_close_w else None,
         'wma45_close_w': float(ind.wma45_close_w) if ind.wma45_close_w else None,
         'the_number_w': float(ind.the_number_w) if ind.the_number_w else None,

@@ -89,6 +89,7 @@ class StockIndicator(Base):
     wma45_rsi_screener = Column(Numeric(5, 2), nullable=True)  # WMA45 RSI للـ Screener
     ema45_rsi = Column(Numeric(5, 2), nullable=True)          # EMA45 RSI
     ema45_cfg = Column(Numeric(5, 2), nullable=True)          # EMA45 CFG
+    cfg_wma45 = Column(Numeric(5, 2), nullable=True)          # WMA45 CFG Daily
     ema20_sma3 = Column(Numeric(5, 2), nullable=True)         # EMA20(SMA3)
     wma45_close = Column(Numeric(10, 2), nullable=True)       # WMA45 Close
     
@@ -100,6 +101,7 @@ class StockIndicator(Base):
     wma45_rsi_w = Column(Numeric(5, 2), nullable=True)
     ema45_rsi_w = Column(Numeric(5, 2), nullable=True)
     ema45_cfg_w = Column(Numeric(5, 2), nullable=True)
+    cfg_wma45_w = Column(Numeric(5, 2), nullable=True)        # WMA45 CFG Weekly
     ema20_sma3_w = Column(Numeric(5, 2), nullable=True)
     sma9_close_w = Column(Numeric(10, 2), nullable=True)
     wma45_close_w = Column(Numeric(10, 2), nullable=True)

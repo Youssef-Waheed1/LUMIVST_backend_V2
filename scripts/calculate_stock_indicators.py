@@ -58,15 +58,12 @@ def calculate_rsi_pinescript(values: List[float], period: int = 14) -> List[Opti
     gains = np.where(deltas > 0, deltas, 0.0)
     losses = np.where(deltas < 0, -deltas, 0.0)
     
-    # RMA - Wilder's Smoothing
     avg_gain = np.full(len(prices), np.nan)
     avg_loss = np.full(len(prices), np.nan)
     
-    # First value - simple average
     avg_gain[period] = np.mean(gains[:period])
     avg_loss[period] = np.mean(losses[:period])
     
-    # Wilder's smoothing
     alpha = 1.0 / period
     for i in range(period + 1, len(prices)):
         avg_gain[i] = avg_gain[i-1] * (1 - alpha) + gains[i-1] * alpha
@@ -151,99 +148,73 @@ def calculate_cci(highs: List[float], lows: List[float], closes: List[float], pe
     return cci_values
 
 
-def calculate_aroon_correct(highs: List[float], lows: List[float], period: int = 25) -> tuple:
+def calculate_aroon_pinescript_exact(highs: List[float], lows: List[float], period: int = 25) -> tuple:
     """
-    ✅ Aroon صحيح 100% - يطابق PineScript
-    يستخدم أول occurrence (barssince) وليس آخر occurrence
+    ✅ Aroon مطابق تماماً لـ Pine Script:
+    
+    Pine Script Code:
+    highestBar = ta.barssince(high == ta.highest(high, period))  # أول occurrence من اليسار لليمين
+    lowestBar = ta.barssince(low == ta.lowest(low, period))      # أول occurrence من اليسار لليمين
+    aroonUp = 100 * (period - highestBar) / period
+    aroonDown = 100 * (period - lowestBar) / period
+    
+    # Important: 
+    # - ta.barssince searches from left to right (oldest to newest)
+    # - Returns 0 when condition is true on current bar
+    # - Returns period-1 when condition never occurred in window
     """
     if not highs or not lows or len(highs) < period:
         return [], []
-        
-    highs_arr = np.array(highs, dtype=float)
-    lows_arr = np.array(lows, dtype=float)
     
     aroon_up = []
     aroon_down = []
     
-    for i in range(len(highs_arr)):
+    for i in range(len(highs)):
         if i < period - 1:
             aroon_up.append(None)
             aroon_down.append(None)
             continue
-            
-        window_high = highs_arr[i-period+1:i+1]
-        window_low = lows_arr[i-period+1:i+1]
         
-        # ✅ أول occurrence - يطابق barssince في PineScript
-        days_since_high = np.argmax(window_high)
-        days_since_low = np.argmin(window_low)
+        # آخر period يوم (period = 25)
+        window_high = highs[i-period+1:i+1]
+        window_low = lows[i-period+1:i+1]
         
-        up = ((period - days_since_high) / period) * 100
-        down = ((period - days_since_low) / period) * 100
+        # أعلى وأقل قيمة في الـ period يوم
+        highest_val = max(window_high)
+        lowest_val = min(window_low)
         
-        aroon_up.append(up)
-        aroon_down.append(down)
+        # ===== Aroon Up =====
+        # ta.barssince - يدور من أول الـ window (منذ 24 يوم) لحد النهاردة
+        # وبياخد أول occurrence يشوفها
+        days_since_high = period - 1  # افتراضياً: لو مالقاش يبقى period-1 (24)
+        for j in range(len(window_high)):  # من 0 إلى period-1 (من الأقدم للأحدث)
+            if window_high[j] == highest_val:
+                days_since_high = len(window_high) - 1 - j  # حولها لأيام من النهاردة
+                break  # ياخد أول occurrence فقط
         
+        # ===== Aroon Down =====
+        # ta.barssince - يدور من أول الـ window (منذ 24 يوم) لحد النهاردة
+        # وبياخد أول occurrence يشوفها
+        days_since_low = period - 1  # افتراضياً: لو مالقاش يبقى period-1 (24)
+        for j in range(len(window_low)):  # من 0 إلى period-1 (من الأقدم للأحدث)
+            if window_low[j] == lowest_val:
+                days_since_low = len(window_low) - 1 - j  # حولها لأيام من النهاردة
+                break  # ياخد أول occurrence فقط
+        
+        # Pine Script formula: 100 * (period - barssince) / period
+        aroon_up.append(100.0 * (period - days_since_high) / period)
+        aroon_down.append(100.0 * (period - days_since_low) / period)
+    
     return aroon_up, aroon_down
-
-
-def calculate_stamp_correct(rsi14_series: List[float], rsi3_series: List[float]) -> Dict[str, Any]:
-    """
-    ✅ STAMP صحيح 100% - يطابق PineScript
-    A = RSI14 - RSI14[9] + SMA(RSI3, 3)
-    """
-    if len(rsi14_series) < 10 or len(rsi3_series) < 3:
-        return {
-            'a_value': None,
-            's9rsi': None,
-            'e45cfg': None,
-            'e45rsi': None,
-            'e20sma3': None
-        }
-    
-    # RSI14 الحالي
-    rsi14_current = rsi14_series[-1]
-    
-    # ✅ RSI14[9] - قيمة RSI من 9 أيام مضت (وليس إعادة حساب)
-    rsi14_9days_ago = rsi14_series[-10] if len(rsi14_series) > 10 else None
-    
-    # SMA(RSI3, 3)
-    rsi3_last_3 = rsi3_series[-3:]
-    sma3_rsi3 = sum(rsi3_last_3) / 3 if len(rsi3_last_3) == 3 else None
-    
-    # ✅ A = RSI14 - RSI14[9] + SMA(RSI3, 3)
-    a_value = None
-    if rsi14_current is not None and rsi14_9days_ago is not None and sma3_rsi3 is not None:
-        a_value = rsi14_current - rsi14_9days_ago + sma3_rsi3
-    
-    # المؤشرات الأخرى
-    s9rsi = calculate_sma(rsi14_series, 9)[-1] if len(rsi14_series) >= 9 else None
-    e45cfg = calculate_ema([a_value] if a_value else [], 45)[-1] if a_value else None
-    e45rsi = calculate_ema(rsi14_series, 45)[-1] if len(rsi14_series) >= 45 else None
-    e20sma3 = calculate_ema(calculate_sma(rsi3_series, 3), 20)[-1] if len(rsi3_series) >= 23 else None
-    
-    return {
-        'a_value': a_value,
-        's9rsi': s9rsi,
-        'e45cfg': e45cfg,
-        'e45rsi': e45rsi,
-        'e20sma3': e20sma3,
-        'rsi14_9days_ago': rsi14_9days_ago,
-        'sma3_rsi3': sma3_rsi3
-    }
 
 
 def calculate_rsi_on_shifted_series(closes: List[float], period: int = 14, shift: int = 9) -> Optional[float]:
     """
     تحسب ta.rsi(close[9], 14) بشكل صحيح وسريع
-    هذه تختلف عن rsi[9]
-    Optimization: Only use necessary history (period + 100 buffer) instead of full history
     """
     if not closes or len(closes) < period + shift + 1:
         return None
     
-    # تحسين الأداء: نأخذ آخر period + 100 يوم قبل الـ shift فقط (ليس كل التاريخ)
-    # This avoids recalculating RSI from the beginning of time for every single day
     buffer = 100
     end_idx = len(closes) - shift
     start_idx = max(0, end_idx - period - buffer)
@@ -253,45 +224,46 @@ def calculate_rsi_on_shifted_series(closes: List[float], period: int = 14, shift
     if len(series) < period + 1:
         return None
         
-    # نحسب RSI على هذه السلسلة الجزئيه
     rsi_shifted = calculate_rsi_pinescript(series, period)
     
-    # نرجع آخر قيمة
     return rsi_shifted[-1] if rsi_shifted else None
 
 
-def calculate_cfg_correct(rsi14_series: List[float], closes: List[float], rsi3_series: List[float]) -> Dict[str, Any]:
+def calculate_cfg_series(rsi14_series: List[float], closes: List[float], rsi3_series: List[float]) -> List[Optional[float]]:
     """
-    ✅ CFG صحيح 100% - يطابق PineScript تماماً (V2)
+    ✅ حساب سلسلة CFG كاملة لكل نقطة زمنية
     CFG = RSI14 - ta.rsi(close[9], 14) + SMA(RSI3, 3)
     """
-    if len(rsi14_series) < 1 or len(closes) < 1:
-        return {
-            'cfg': None,
-            'rsi14_shifted': None,
-            'rsi14_current': None,
-            'sma3_rsi3': None
-        }
-
-    rsi14_current = rsi14_series[-1]
+    cfg_values = []
     
-    # ✅ هذا هو الفرق الحاسم - نستخدم السعر وليس RSI
-    # ta.rsi(close[9], 14)
-    rsi14_shifted = calculate_rsi_on_shifted_series(closes, 14, 9)
+    for i in range(len(rsi14_series)):
+        if i < 10 or i >= len(closes) or i < 3:
+            cfg_values.append(None)
+            continue
+            
+        rsi14_current = rsi14_series[i]
+        
+        # حساب ta.rsi(close[9], 14) لهذه النقطة
+        closes_subset = closes[:i+1]
+        rsi14_shifted = calculate_rsi_on_shifted_series(closes_subset, 14, 9)
+        
+        # SMA3 من RSI3 لآخر 3 أيام
+        if i >= 2:
+            rsi3_last_3 = rsi3_series[i-2:i+1]
+            if all(v is not None for v in rsi3_last_3):
+                sma3_rsi3 = sum(rsi3_last_3) / 3
+            else:
+                sma3_rsi3 = None
+        else:
+            sma3_rsi3 = None
+        
+        if rsi14_current is not None and rsi14_shifted is not None and sma3_rsi3 is not None:
+            cfg = rsi14_current - rsi14_shifted + sma3_rsi3
+            cfg_values.append(cfg)
+        else:
+            cfg_values.append(None)
     
-    rsi3_last_3 = rsi3_series[-3:]
-    sma3_rsi3 = sum(rsi3_last_3) / 3 if len(rsi3_last_3) == 3 else None
-    
-    cfg = None
-    if rsi14_current is not None and rsi14_shifted is not None and sma3_rsi3 is not None:
-        cfg = rsi14_current - rsi14_shifted + sma3_rsi3
-    
-    return {
-        'cfg': cfg,
-        'rsi14_shifted': rsi14_shifted,  # ta.rsi(close[9], 14)
-        'rsi14_current': rsi14_current,
-        'sma3_rsi3': sma3_rsi3
-    }
+    return cfg_values
 
 
 def calculate_the_number_full(highs: List[float], lows: List[float]):
@@ -405,28 +377,34 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
     sma3_rsi3 = calculate_sma(rsi_3, 3)
     ema20_sma3 = calculate_ema(sma3_rsi3, 20)
     
-    # 5. ✅ STAMP - تصحيح كامل
-    stamp_data = calculate_stamp_correct(rsi_14, rsi_3)
+    # 5. CFG Series - حساب السلسلة الكاملة
+    cfg_series = calculate_cfg_series(rsi_14, closes, rsi_3)
     
-    # 6. ✅ CFG - تصحيح كامل (V2)
-    cfg_data = calculate_cfg_correct(rsi_14, closes, rsi_3)
+    # 6. CFG Averages - تحسب على السلسلة الكاملة
+    cfg_sma9 = calculate_sma(cfg_series, 9)
+    cfg_sma20 = calculate_sma(cfg_series, 20)
+    cfg_ema20 = calculate_ema(cfg_series, 20)
+    cfg_ema45 = calculate_ema(cfg_series, 45)
+    cfg_wma45 = calculate_wma(cfg_series, 45)
     
-    # 7. CFG Averages
-    cfg_values = [cfg_data['cfg']] * len(closes) if cfg_data['cfg'] else [None] * len(closes)
-    sma9_cfg = calculate_sma(cfg_values, 9)
-    sma20_cfg = calculate_sma(cfg_values, 20)
-    ema20_cfg = calculate_ema(cfg_values, 20)
-    ema45_cfg = calculate_ema(cfg_values, 45)
-    
-    # 8. The Number
+    # 7. The Number
     the_number, the_number_hl, the_number_ll = calculate_the_number_full(highs, lows)
+    
+    # 8. STAMP Values
+    rsi14_9days_ago = rsi_14[-10] if len(rsi_14) > 10 else None
+    rsi3_last_3 = rsi_3[-3:] if len(rsi_3) >= 3 else []
+    sma3_rsi3_val = sum(rsi3_last_3) / 3 if len(rsi3_last_3) == 3 else None
+    
+    a_value = None
+    if rsi_14[-1] is not None and rsi14_9days_ago is not None and sma3_rsi3_val is not None:
+        a_value = rsi_14[-1] - rsi14_9days_ago + sma3_rsi3_val
     
     # 9. Trend Indicators
     cci = calculate_cci(highs, lows, closes, 14)
     cci_ema20 = calculate_ema(cci, 20)
     
-    # ✅ Aroon صحيح
-    aroon_up, aroon_down = calculate_aroon_correct(highs, lows, 25)
+    # ✅ Aroon مطابق 100% لـ Pine Script الآن
+    aroon_up, aroon_down = calculate_aroon_pinescript_exact(highs, lows, 25)
     
     # --- Weekly Calculations ---
     df_weekly = df.set_index('date').resample('W-FRI').agg({
@@ -452,12 +430,14 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
     wma45_rsi_w = calculate_wma(rsi_w, 45)
     ema45_rsi_w = calculate_ema(rsi_w, 45)
     
-    # Weekly CFG (V2)
-    cfg_w_data = calculate_cfg_correct(rsi_w, closes_w, rsi_3_w)
-    cfg_w = cfg_w_data['cfg']
-    ema45_cfg_w = calculate_ema([cfg_w] if cfg_w else [], 45)[-1] if cfg_w else None
-    ema20_cfg_w = calculate_ema([cfg_w] if cfg_w else [], 20)[-1] if cfg_w else None
-    sma9_cfg_w = calculate_sma([cfg_w] if cfg_w else [], 9)[-1] if cfg_w else None
+    # Weekly CFG Series
+    cfg_w_series = calculate_cfg_series(rsi_w, closes_w, rsi_3_w)
+    
+    # Weekly CFG Averages - تحسب على السلسلة الكاملة
+    cfg_w_sma9 = calculate_sma(cfg_w_series, 9)
+    cfg_w_ema20 = calculate_ema(cfg_w_series, 20)
+    cfg_w_ema45 = calculate_ema(cfg_w_series, 45)
+    cfg_w_wma45 = calculate_wma(cfg_w_series, 45)
     
     # Weekly Price MAs
     sma9_close_w = calculate_sma(closes_w, 9)
@@ -471,16 +451,18 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
     # Weekly CCI and Aroon
     cci_w = calculate_cci(highs_w, lows_w, closes_w, 14)
     cci_ema20_w = calculate_ema(cci_w, 20)
-    aroon_up_w, aroon_down_w = calculate_aroon_correct(highs_w, lows_w, 25)
+    aroon_up_w, aroon_down_w = calculate_aroon_pinescript_exact(highs_w, lows_w, 25)
+    
+    # Weekly EMA20 SMA3 RSI3
+    ema20_sma3_w = calculate_ema(sma3_rsi3_w, 20)
     
     # --- Current Values ---
     idx = len(df) - 1
-    w_idx = -1  # ✅ تعريف w_idx - آخر قيمة في البيانات الأسبوعية
+    w_idx = len(df_weekly) - 1
     
     # التحقق من تطابق التاريخ
     actual_date = df.iloc[idx]['date']
     if target_date and pd.to_datetime(actual_date) != pd.to_datetime(target_date):
-        print(f"⚠️  {symbol}: Last row date ({actual_date}) != target date ({target_date})")
         # البحث عن التاريخ المطلوب
         target_idx = None
         for i in range(len(df) - 1, -1, -1):
@@ -490,7 +472,6 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         if target_idx is None:
             return {}
         idx = target_idx
-        # w_idx يبقى -1 (آخر قيمة في الأسبوعي)
     
     # --- Filters ---
     is_etf_or_index = 'INDEX' in symbol or 'ETF' in symbol
@@ -507,20 +488,17 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
     cond_stamp_1_d = get_val(sma9_close, idx) > get_val(wma45_close, idx) if all(v is not None for v in [get_val(sma9_close, idx), get_val(wma45_close, idx)]) else False
     cond_stamp_2_d = get_val(sma9_rsi, idx) > get_val(wma45_rsi, idx) if all(v is not None for v in [get_val(sma9_rsi, idx), get_val(wma45_rsi, idx)]) else False
     cond_stamp_3_d = get_val(ema45_rsi, idx) > 50 if get_val(ema45_rsi, idx) is not None else False
-    cond_stamp_4_d = get_val(ema45_cfg, idx) > 50 if get_val(ema45_cfg, idx) is not None else False
+    cond_stamp_4_d = get_val(cfg_ema45, idx) > 50 if get_val(cfg_ema45, idx) is not None else False
     cond_stamp_5_d = get_val(ema20_sma3, idx) > 50 if get_val(ema20_sma3, idx) is not None else False
     
     stamp_daily = cond_stamp_1_d and cond_stamp_2_d and cond_stamp_3_d and cond_stamp_4_d and cond_stamp_5_d
     
-    # Weekly STAMP Correction
-    ema20_sma3_w_series = calculate_ema(sma3_rsi3_w, 20)
-    ema20_sma3_w_val = get_val(ema20_sma3_w_series, w_idx)
-
+    # Weekly STAMP
     cond_stamp_1_w = get_val(sma9_close_w, w_idx) > get_val(wma45_close_w, w_idx) if all(v is not None for v in [get_val(sma9_close_w, w_idx), get_val(wma45_close_w, w_idx)]) else False
     cond_stamp_2_w = get_val(sma9_rsi_w, w_idx) > get_val(wma45_rsi_w, w_idx) if all(v is not None for v in [get_val(sma9_rsi_w, w_idx), get_val(wma45_rsi_w, w_idx)]) else False
     cond_stamp_3_w = get_val(ema45_rsi_w, w_idx) > 50 if get_val(ema45_rsi_w, w_idx) is not None else False
-    cond_stamp_4_w = get_val(ema45_cfg_w, -1) > 50 if ema45_cfg_w is not None else False
-    cond_stamp_5_w = ema20_sma3_w_val > 50 if ema20_sma3_w_val is not None else False
+    cond_stamp_4_w = get_val(cfg_w_ema45, w_idx) > 50 if get_val(cfg_w_ema45, w_idx) is not None else False
+    cond_stamp_5_w = get_val(ema20_sma3_w, w_idx) > 50 if get_val(ema20_sma3_w, w_idx) is not None else False
     
     stamp_weekly = cond_stamp_1_w and cond_stamp_2_w and cond_stamp_3_w and cond_stamp_4_w and cond_stamp_5_w
     stamp = stamp_daily and stamp_weekly
@@ -547,13 +525,13 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
     sma9rsi_gt_wma45rsi_w = get_val(sma9_rsi_w, w_idx) > get_val(wma45_rsi_w, w_idx) if all(v is not None for v in [get_val(sma9_rsi_w, w_idx), get_val(wma45_rsi_w, w_idx)]) else False
     
     # CFG Conditions
-    cfg_gt_50_daily = cfg_data['cfg'] > 50 if cfg_data['cfg'] is not None else False
-    cfg_ema45_gt_50 = get_val(ema45_cfg, idx) > 50 if get_val(ema45_cfg, idx) is not None else False
-    cfg_ema20_gt_50 = get_val(ema20_cfg, idx) > 50 if get_val(ema20_cfg, idx) is not None else False
+    cfg_gt_50_daily = get_val(cfg_series, idx) > 50 if get_val(cfg_series, idx) is not None else False
+    cfg_ema45_gt_50 = get_val(cfg_ema45, idx) > 50 if get_val(cfg_ema45, idx) is not None else False
+    cfg_ema20_gt_50 = get_val(cfg_ema20, idx) > 50 if get_val(cfg_ema20, idx) is not None else False
     
-    cfg_gt_50_w = cfg_w > 50 if cfg_w is not None else False
-    cfg_ema45_gt_50_w = ema45_cfg_w > 50 if ema45_cfg_w is not None else False
-    cfg_ema20_gt_50_w = ema20_cfg_w > 50 if ema20_cfg_w is not None else False
+    cfg_gt_50_w = get_val(cfg_w_series, w_idx) > 50 if get_val(cfg_w_series, w_idx) is not None else False
+    cfg_ema45_gt_50_w = get_val(cfg_w_ema45, w_idx) > 50 if get_val(cfg_w_ema45, w_idx) is not None else False
+    cfg_ema20_gt_50_w = get_val(cfg_w_ema20, w_idx) > 50 if get_val(cfg_w_ema20, w_idx) is not None else False
     
     # --- Trend Conditions ---
     price_gt_sma18 = get_val(closes, idx) > get_val(sma18, idx) if all(v is not None for v in [get_val(closes, idx), get_val(sma18, idx)]) else False
@@ -612,6 +590,7 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         'rsi_14': get_val(rsi_14, idx),
         'sma9_rsi': get_val(sma9_rsi, idx),
         'wma45_rsi': get_val(wma45_rsi, idx),
+        'ema45_rsi': get_val(ema45_rsi, idx),
         
         # ===== 2. The Number =====
         'sma9_close': get_val(sma9_close, idx),
@@ -620,14 +599,14 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         'the_number_ll': get_val(the_number_ll, idx),
         
         # ===== 3. Stamp Indicator =====
-        'rsi_14_9days_ago': stamp_data.get('rsi14_9days_ago'),
+        'rsi_14_9days_ago': rsi14_9days_ago,
         'rsi_3': get_val(rsi_3, idx),
-        'sma3_rsi3': stamp_data.get('sma3_rsi3'),
-        'stamp_a_value': stamp_data.get('a_value'),
-        'stamp_s9rsi': stamp_data.get('s9rsi'),
-        'stamp_e45cfg': stamp_data.get('e45cfg'),
-        'stamp_e45rsi': stamp_data.get('e45rsi'),
-        'stamp_e20sma3': stamp_data.get('e20sma3'),
+        'sma3_rsi3': sma3_rsi3_val,
+        'stamp_a_value': a_value,
+        'stamp_s9rsi': get_val(sma9_rsi, idx),
+        'stamp_e45cfg': get_val(cfg_ema45, idx),
+        'stamp_e45rsi': get_val(ema45_rsi, idx),
+        'stamp_e20sma3': get_val(ema20_sma3, idx),
         
         # ===== 4. Trend Screener =====
         'sma4': get_val(sma4, idx),
@@ -661,8 +640,7 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         
         # ===== 5. RSI Screener =====
         'wma45_rsi_screener': get_val(wma45_rsi, idx),
-        'ema45_rsi': get_val(ema45_rsi, idx),
-        'ema45_cfg': get_val(ema45_cfg, idx),
+        'ema45_cfg': get_val(cfg_ema45, idx),
         'ema20_sma3': get_val(ema20_sma3, idx),
         'wma45_close': get_val(wma45_close, idx),
         
@@ -673,8 +651,8 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         'sma9_rsi_w': get_val(sma9_rsi_w, w_idx),
         'wma45_rsi_w': get_val(wma45_rsi_w, w_idx),
         'ema45_rsi_w': get_val(ema45_rsi_w, w_idx),
-        'ema45_cfg_w': ema45_cfg_w,
-        'ema20_sma3_w': ema20_sma3_w_val,  # ✅ Corrected
+        'ema45_cfg_w': get_val(cfg_w_ema45, w_idx),
+        'ema20_sma3_w': get_val(ema20_sma3_w, w_idx),
         'sma9_close_w': get_val(sma9_close_w, w_idx),
         'wma45_close_w': get_val(wma45_close_w, w_idx),
         'the_number_w': get_val(tn_w, w_idx),
@@ -700,15 +678,17 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         'stamp': stamp,
         
         # ===== 6. CFG Analysis =====
-        'cfg_daily': cfg_data.get('cfg'),
-        'cfg_sma9': get_val(sma9_cfg, idx),
-        'cfg_sma20': get_val(sma20_cfg, idx),
-        'cfg_ema20': get_val(ema20_cfg, idx),
-        'cfg_ema45': get_val(ema45_cfg, idx),
-        'cfg_w': cfg_w,
-        'cfg_sma9_w': sma9_cfg_w,
-        'cfg_ema20_w': ema20_cfg_w,
-        'cfg_ema45_w': ema45_cfg_w,
+        'cfg_daily': get_val(cfg_series, idx),
+        'cfg_sma9': get_val(cfg_sma9, idx),
+        'cfg_sma20': get_val(cfg_sma20, idx),
+        'cfg_ema20': get_val(cfg_ema20, idx),
+        'cfg_ema45': get_val(cfg_ema45, idx),
+        'cfg_wma45': get_val(cfg_wma45, idx),
+        'cfg_w': get_val(cfg_w_series, w_idx),
+        'cfg_sma9_w': get_val(cfg_w_sma9, w_idx),
+        'cfg_ema20_w': get_val(cfg_w_ema20, w_idx),
+        'cfg_ema45_w': get_val(cfg_w_ema45, w_idx),
+        'cfg_wma45_w': get_val(cfg_w_wma45, w_idx),
         
         # CFG Conditions
         'cfg_gt_50_daily': cfg_gt_50_daily,
@@ -716,14 +696,11 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
         'cfg_ema20_gt_50': cfg_ema20_gt_50,
         'cfg_gt_50_w': cfg_gt_50_w,
         'cfg_ema45_gt_50_w': cfg_ema45_gt_50_w,
-        'cfg_ema20_gt_50_w': cfg_ema20_gt_50_w,  # ✅ Corrected: Added missing variable
-
+        'cfg_ema20_gt_50_w': cfg_ema20_gt_50_w,
         
         # CFG Components
-        'rsi_14_9days_ago_cfg': cfg_data.get('rsi14_shifted'), # ✅ Correctly mapped to new V2 Logic
-        'rsi_14_w_shifted': cfg_w_data.get('rsi14_shifted'), # ✅ Added
-        'rsi_14_minus_9': cfg_data.get('cfg') - cfg_data.get('sma3_rsi3') if cfg_data.get('cfg') is not None else None, # approximate
-        'rsi_14_minus_9_w': get_val(rsi_w, w_idx) - get_val(rsi_w, w_idx-9) if len(rsi_w) > 9 and get_val(rsi_w, w_idx) is not None and get_val(rsi_w, w_idx-9) is not None else None,
+        'rsi_14_9days_ago_cfg': calculate_rsi_on_shifted_series(closes, 14, 9),
+        'rsi_14_w_shifted': calculate_rsi_on_shifted_series(closes_w, 14, 9),
         
         # Final Results
         'final_signal': final_signal,
@@ -736,7 +713,7 @@ def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: da
 def calculate_and_store_indicators(db: Session, target_date: date = None):
     """حساب وتخزين جميع المؤشرات"""
     print("=" * 60)
-    print("📊 Starting Stock Indicators Calculation - CORRECTED VERSION")
+    print("📊 Starting Stock Indicators Calculation - PINESCRIPT EXACT VERSION")
     print("=" * 60)
     
     deleted_count, target_date = delete_old_calculations(db, target_date)
@@ -809,7 +786,7 @@ def calculate_and_store_indicators(db: Session, target_date: date = None):
             
             if processed % 10 == 0:
                 print(f"✅ Processed {processed}/{total_stocks} stocks...")
-                print(f"   Last: {symbol} - Score: {data.get('score', 0)} | CFG: {data.get('cfg_daily', 0):.1f}")
+                print(f"   Last: {symbol} - Score: {data.get('score', 0)} | Aroon Up: {data.get('aroon_up', 0):.1f}% | Aroon Down: {data.get('aroon_down', 0):.1f}%")
                 
         except Exception as e:
             print(f"❌ Error processing {symbol}: {e}")
