@@ -21,6 +21,7 @@ class PriceResponse(BaseModel):
     value_traded_sar: Optional[Decimal] = None
     no_of_trades: Optional[int] = None
     market_cap: Optional[Decimal] = None
+    trading_view_symbol: Optional[str] = None
     
     # Technical Indicators
     price_minus_sma_10: Optional[Decimal] = None
