@@ -25,14 +25,15 @@ from scripts.calculate_rsi_indicators import convert_to_float, get_val
 
 
 def delete_old_calculations(db: Session, target_date: date = None):
-    """Delete old indicator calculations for the target date"""
-    print("🧹 Cleaning up old calculations...")
+    """Delete old indicator calculations for the target date only (not old dates)"""
+    print("🧹 Cleaning up old calculations for today...")
     
     if target_date is None:
         result = db.execute(text("SELECT MAX(date) FROM prices"))
         target_date = result.scalar()
     
     if target_date:
+        # Delete only for TODAY (target_date), not old historical data
         delete_query = text("""
             DELETE FROM stock_indicators 
             WHERE date = :target_date
@@ -40,7 +41,7 @@ def delete_old_calculations(db: Session, target_date: date = None):
         result = db.execute(delete_query, {"target_date": target_date})
         deleted_count = result.rowcount
         db.commit()
-        print(f"✅ Deleted {deleted_count} old records for date {target_date}")
+        print(f"✅ Deleted {deleted_count} old records for date {target_date} (will be recalculated)")
         return deleted_count, target_date
     return 0, None
 
@@ -270,15 +271,25 @@ def calculate_and_store_indicators(db: Session, target_date: date = None, target
         for err in error_details[:10]:  # عرض أول 10 أخطاء فقط
             print(f"   - {err}")
     print("=" * 60)
+    
+    return processed, errors, successful
 
 
 if __name__ == "__main__":
     db = SessionLocal()
     try:
-        # قراءة الرمز من سطر الأوامر (اختياري)
+        # قراءة الرمز والتاريخ من سطر الأوامر (اختياري)
         target_symbol = sys.argv[1] if len(sys.argv) > 1 else None
-        
-        # يمكن تحديد تاريخ معين، مثلاً: date(2026, 2, 12)
-        calculate_and_store_indicators(db, target_symbol=target_symbol)
+        target_date = None
+        if len(sys.argv) > 2:
+            try:
+                # نتوقع التاريخ بصيغة ISO YYYY-MM-DD
+                target_date = date.fromisoformat(sys.argv[2])
+            except Exception:
+                print(f"❌ Invalid date format: {sys.argv[2]}. Use YYYY-MM-DD")
+                raise
+
+        # تشغيل الحساب مع التاريخ والرمز (إن وُجد)
+        calculate_and_store_indicators(db, target_date=target_date, target_symbol=target_symbol)
     finally:
         db.close()

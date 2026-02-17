@@ -22,6 +22,10 @@ class FileType(str, enum.Enum):
     EXCEL = 'excel'
     OTHER = 'other'
 
+class FilingLanguage(str, enum.Enum):
+    EN = 'en'
+    AR = 'ar'
+
 class CompanyOfficialFiling(Base):
     """
     Model for storing official company filings (PDF/Excel) downloaded from sources like Tadawul.
@@ -40,6 +44,7 @@ class CompanyOfficialFiling(Base):
     source_url = Column(String, nullable=True) # Original Tadawul URL
     file_type = Column(PgEnum(FileType), nullable=True)
     file_size_bytes = Column(BigInteger, nullable=True)
+    language = Column(PgEnum(FilingLanguage, name='filing_language_enum', create_type=False, values_callable=lambda x: [e.value for e in x]), nullable=False, server_default='en')
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

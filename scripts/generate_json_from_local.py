@@ -14,9 +14,19 @@ SECTION_MAP = {
     "ESG_Report": "ESG Report"
 }
 
-def generate_json_from_local(symbol):
+AR_PERIOD_MAP = {
+    "سنوي": "Annual",
+    "الربع_الأول": "Q1",
+    "الربع_الثاني": "Q2",
+    "الربع_الثالث": "Q3",
+    "الربع_الرابع": "Q4",
+    "تقرير_مجلس_الإدارة": "Annual", # Board reports are typically annual
+    "Q1": "Q1", "Q2": "Q2", "Q3": "Q3", "Q4": "Q4", "Annual": "Annual"
+}
+
+def generate_json_from_local(symbol, folder_suffix=""):
     base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-    downloads_dir = os.path.join(base_dir, "downloads", str(symbol))
+    downloads_dir = os.path.join(base_dir, "downloads", f"{symbol}{folder_suffix}")
     output_path = os.path.join(base_dir, "scrape_financial_reports.json")
 
     if not os.path.exists(downloads_dir):
@@ -91,12 +101,19 @@ def generate_json_from_local(symbol):
                  # Fallback split
                  period = parts[-1]
 
-            # Normalize Period for API
-            # The API expects 'Annual', 'Q1', 'Q2', 'Q3', 'Q4' usually.
-            # If period is 'Board_Report', map to 'Annual'
-            api_period = period
-            if period == 'Board_Report':
+            # Normalize Period for API (Handle Arabic or English)
+            api_period = AR_PERIOD_MAP.get(period, period)
+            
+            # Special case for Board Report which might repeat the section name as period
+            if period == 'Board_Report' or api_period == 'Board_Report':
                 api_period = 'Annual'
+            
+            # Additional fallback: Check if period contains known English keys
+            if api_period not in ['Annual', 'Q1', 'Q2', 'Q3', 'Q4']:
+                 for k, v in AR_PERIOD_MAP.items():
+                     if k in period:
+                         api_period = v
+                         break
             
             category_name = SECTION_MAP.get(section_key, "Other")
             
@@ -124,6 +141,10 @@ def generate_json_from_local(symbol):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/generate_json_from_local.py <SYMBOL>")
-    else:
-        generate_json_from_local(sys.argv[1])
+        print("Usage: python generate_json_from_local.py <SYMBOL> [folder_suffix]")
+        print("Example: python generate_json_from_local.py 2222 _ar")
+        sys.exit(1)
+        
+    symbol = sys.argv[1]
+    folder_suffix = sys.argv[2] if len(sys.argv) > 2 else ""
+    generate_json_from_local(symbol, folder_suffix)

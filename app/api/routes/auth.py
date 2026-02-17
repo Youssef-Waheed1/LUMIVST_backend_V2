@@ -389,8 +389,14 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
-            
-        # Create JWT
+        # If the account is not yet approved by an admin, deny issuing tokens
+        if not user.is_approved:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+            )
+
+        # Create JWT for approved users
         access_token = create_access_token(data={
             "sub": str(user.id), 
             "email": user.email,
@@ -398,7 +404,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             "is_admin": user.is_admin
         })
         await store_token_in_redis(user.id, access_token)
-        
+
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -471,8 +477,14 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-        
-    # Create JWT
+    # If the account is not yet approved by an admin, deny issuing tokens
+    if not user.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+        )
+
+    # Create JWT for approved users
     jwt_token = create_access_token(data={
         "sub": str(user.id), 
         "email": user.email,
@@ -480,7 +492,7 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
         "is_admin": user.is_admin
     })
     await store_token_in_redis(user.id, jwt_token)
-    
+
     return {
         "access_token": jwt_token,
         "token_type": "bearer",

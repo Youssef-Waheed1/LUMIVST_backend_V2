@@ -252,8 +252,8 @@ def update_daily(target_date_str=None):
         logger.info("📈 Calculating and Storing Stock Technical Indicators...")
         from scripts.calculate_stock_indicators import calculate_and_store_indicators
         
-        processed, skipped, errors = calculate_and_store_indicators(db, market_date)
-        logger.info(f"✅ Stock Indicators Updated (Processed: {processed}, Skipped: {skipped}, Errors: {errors})")
+        processed, errors, successful = calculate_and_store_indicators(db, market_date)
+        logger.info(f"✅ Stock Indicators Updated (Processed: {processed}, Successful: {successful}, Errors: {errors})")
         
         logger.info("🎉 Daily Update Workflow Completed Successfully!")
 

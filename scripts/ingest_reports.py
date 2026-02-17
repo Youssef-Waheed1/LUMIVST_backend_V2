@@ -10,7 +10,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 # Assumes script is in backend/scripts, so we go .. -> data
 JSON_FILE_PATH = os.path.join(script_dir, "..", "data", "scrape_financial_reports.json")
 
-def ingest_data(symbol):
+def ingest_data(symbol, language='en'):
     print(f"📂 Reading data from {JSON_FILE_PATH}...")
     
     if not os.path.exists(JSON_FILE_PATH):
@@ -22,10 +22,12 @@ def ingest_data(symbol):
 
     payload = {
         "symbol": str(symbol),
+        "language": language,
         "data": scraped_data
     }
     
-    print(f"🚀 Sending data to API for Symbol: {symbol}...")
+    lang_label = "العربية" if language == 'ar' else "English"
+    print(f"🚀 Sending data to API for Symbol: {symbol} (Language: {lang_label})...")
     
     try:
         response = requests.post(API_URL, json=payload)
@@ -43,8 +45,9 @@ def ingest_data(symbol):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("⚠️  Usage: python scripts/ingest_reports.py <COMPANY_SYMBOL>")
-        print("Example: python scripts/ingest_reports.py 4322")
+        print("⚠️  Usage: python scripts/ingest_reports.py <COMPANY_SYMBOL> [language]")
+        print("Example: python scripts/ingest_reports.py 4322 ar")
     else:
         symbol = sys.argv[1]
-        ingest_data(symbol)
+        language = sys.argv[2] if len(sys.argv) > 2 else 'en'
+        ingest_data(symbol, language=language)

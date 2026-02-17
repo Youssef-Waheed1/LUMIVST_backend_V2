@@ -21,6 +21,10 @@ class FileTypeEnum(str, Enum):
     EXCEL = 'excel'
     OTHER = 'other'
 
+class FilingLanguageEnum(str, Enum):
+    EN = 'en'
+    AR = 'ar'
+
 # Base Schema
 class OfficialFilingBase(BaseModel):
     company_symbol: str
@@ -30,6 +34,7 @@ class OfficialFilingBase(BaseModel):
     published_date: Optional[date] = None
     source_url: Optional[str] = None
     file_type: Optional[FileTypeEnum] = None
+    language: FilingLanguageEnum = FilingLanguageEnum.EN
 
 class OfficialFilingResponse(OfficialFilingBase):
     id: int
@@ -52,5 +57,6 @@ class ScrapedFilingItem(BaseModel):
 
 class IngestOfficialFilingsRequest(BaseModel):
     symbol: str
+    language: str = 'en'  # 'en' or 'ar'
     # Map Category Name -> List of Items
     data: Dict[str, List[ScrapedFilingItem]] 

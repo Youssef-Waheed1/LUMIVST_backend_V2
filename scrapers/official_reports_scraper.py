@@ -9,18 +9,65 @@ from playwright.async_api import async_playwright, Page, Locator
 # --- Configuration ---
 TIMEOUT_MS = 120000
 
+# --- Language Configuration ---
+LANG_CONFIG = {
+    'en': {
+        'locale': 'en-US',
+        'tab_name': 'Financials',
+        'section_header': 'FINANCIAL STATEMENTS AND REPORTS',
+        'section_header_fallback': 'Financial Statements',
+        'valid_sections': ['Financial Statements', 'XBRL', 'Board Report', 'ESG Report'],
+        'valid_periods': ['Annual', 'Q1', 'Q2', 'Q3', 'Q4'],
+        'default_section': 'General Reports',
+    },
+    'ar': {
+        'locale': 'ar-SA',
+        'tab_name': 'البيانات المالية',
+        'section_header': 'القوائم المالية والتقارير',
+        'section_header_fallback': 'القوائم المالية',
+        'valid_sections': ['القوائم المالية', 'لغة التقارير المرنة', 'تقرير مجلس الإدارة', 'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات'],
+        'valid_periods': ['سنوي', 'الربع الأول', 'الربع الثاني', 'الربع الثالث', 'الربع الرابع'],
+        'default_section': 'تقارير عامة',
+    }
+}
+
+# Mapping Arabic section names to English (for storage consistency)
+AR_SECTION_TO_EN = {
+    'القوائم المالية': 'Financial Statements',
+    'لغة التقارير المرنة': 'XBRL',
+    'تقرير مجلس الإدارة': 'Board Report',
+    'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات': 'ESG Report',
+}
+
+# Mapping Arabic periods to English (for storage consistency)
+AR_PERIOD_TO_EN = {
+    'سنوي': 'Annual',
+    'الربع الأول': 'Q1',
+    'الربع الثاني': 'Q2',
+    'الربع الثالث': 'Q3',
+    'الربع الرابع': 'Q4',
+}
+
 class FinancialReportsScraper:
-    def __init__(self, symbol: str, headless: bool = False):
+    def __init__(self, symbol: str, headless: bool = False, lang: str = 'en'):
         self.symbol = symbol
         self.headless = headless
+        self.lang = lang
+        self.lang_config = LANG_CONFIG[lang]
         
-        # Updated URL that works for all companies
-        base_long_url = "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/"
+        # Base URLs for each language
+        self.base_urls = {
+            'en': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30w1EVGAQHmAIVBPga-xgEGbgbmOlHEaPfAAdwNCCsPwqvEndzdAVYnAhWgMcNXvpR6Tn5SZDwyCgpKbBSNVA1KElMSSwvzVEFujE5P7cgMa8yuDI3KR-oyMTYyEg_OLFIvyA3NMIgMyA3XNdREQDj62qi/dz/d5/L0lHSkovd0RNQU5rQUVnQSEhLzROVkUvZW4!/",
+            'ar': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/"
+        }
+        
+        base_long_url = self.base_urls.get(lang, self.base_urls['en'])
         self.base_url = f"{base_long_url}?companySymbol={symbol}"
         
-        # Download directory
+        # Download directory - separate by language
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.download_base_dir = os.path.join(script_dir, "..", "data", "downloads", symbol)
+        lang_suffix = f"_{lang}" if lang != 'en' else ""
+        self.download_base_dir = os.path.join(script_dir, "..", "data", "downloads", f"{symbol}{lang_suffix}")
         os.makedirs(self.download_base_dir, exist_ok=True)
         
         self.context = None
@@ -35,13 +82,14 @@ class FinancialReportsScraper:
             self.context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (HTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1600, "height": 1000},
-                locale="en-US",
+                locale=self.lang_config['locale'],
                 accept_downloads=True
             )
             page = await self.context.new_page()
             
             try:
                 print(f"Navigating to {self.base_url}...")
+                print(f"Language: {self.lang} ({self.lang_config['locale']})")
                 
                 # Retry logic for navigation
                 for attempt in range(3):
@@ -58,17 +106,29 @@ class FinancialReportsScraper:
                         await asyncio.sleep(5)
                 
                 # Navigate to Financials Tab
-                print("Processing Financials Tab...")
-                if await self._click_tab(page, "Financials"):
+                tab_name = self.lang_config['tab_name']
+                print(f"Processing '{tab_name}' Tab...")
+                if await self._click_tab(page, tab_name):
                     await page.wait_for_timeout(3000) 
                     
-                    # Target Section: FINANCIAL STATEMENTS AND REPORTS
-                    print("\n--- Scraping FINANCIAL STATEMENTS AND REPORTS ---")
+                    # Target Section
+                    section_header = self.lang_config['section_header']
+                    print(f"\n--- Scraping '{section_header}' ---")
                     reports_data = await self._scrape_statements_and_reports(page)
                     
                 else:
-                    print("Could not find 'Financials' tab.")
-
+                    print(f"Could not find '{tab_name}' tab.")
+                    # DEBUG: Print all potential tab candidates
+                    print("  -> DEBUG: Listing all potential tabs/links on page:")
+                    try:
+                        candidates = await page.evaluate(r"""() => {
+                            const els = document.querySelectorAll('ul.nav li, .tab, h2, h3, a');
+                            return Array.from(els).map(e => e.innerText.trim()).filter(t => t.length > 0 && t.length < 50);
+                        }""")
+                        print(f"  -> Found candidates: {candidates[:20]}...")
+                    except Exception as e:
+                        print(f"  -> Debug extract failed: {e}")
+            
             except Exception as e:
                 print(f"An error occurred during scraping: {e}")
             finally:
@@ -77,6 +137,33 @@ class FinancialReportsScraper:
         return reports_data
 
     # --- Helper methods ---
+
+    async def _switch_to_arabic(self, page: Page) -> bool:
+        """Switch the Saudi Exchange website to Arabic."""
+        try:
+            # Try clicking the Arabic language link/button
+            result = await page.evaluate("""() => {
+                // Look for Arabic language switcher
+                const links = document.querySelectorAll('a, button, span');
+                for (const el of links) {
+                    const text = (el.innerText || '').trim();
+                    const href = (el.href || '').toLowerCase();
+                    // Common patterns for Arabic switch
+                    if (text === 'العربية' || text === 'عربي' || text === 'AR' || 
+                        href.includes('/ar/') || href.includes('locale=ar')) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            if result:
+                await page.wait_for_load_state("domcontentloaded")
+                return True
+            return False
+        except Exception as e:
+            print(f"  -> Error switching language: {e}")
+            return False
 
     async def _click_tab(self, page: Page, tab_name: str) -> bool:
         """Helper to find and click a tab."""
@@ -137,6 +224,11 @@ class FinancialReportsScraper:
             elif '.pdf' in low_url: 
                 ext = 'pdf'
             
+            # Normalize section/period to English for consistent filenames
+            if self.lang == 'ar':
+                section = AR_SECTION_TO_EN.get(section, section)
+                period = AR_PERIOD_TO_EN.get(period, period)
+            
             safe_period = period.replace(" ", "_").replace("/", "-")
             safe_section = section.replace(" ", "_").replace("/", "-")
             filename = f"{year}_{safe_section}_{safe_period}.{ext}"
@@ -155,10 +247,10 @@ class FinancialReportsScraper:
                     # 1. Go to the domain root to establish context (Cookies/Origin)
                     await page.goto("https://www.saudiexchange.sa/wps/portal/saudiexchange/home", 
                                   wait_until="domcontentloaded", 
-                                  timeout=90000) # Increased timeout
+                                  timeout=90000)
                     
                     # 2. Setup Listener
-                    async with page.expect_download(timeout=120000) as download_info: # Increased wait for download start
+                    async with page.expect_download(timeout=120000) as download_info:
                         # 3. Inject JS to force download
                         await page.evaluate(f"""(url) => {{
                             const a = document.createElement('a');
@@ -198,16 +290,22 @@ class FinancialReportsScraper:
         """
         reports_data = {}
         
-        print("\n  -> Preparing view for FINANCIAL STATEMENTS AND REPORTS...")
+        section_header = self.lang_config['section_header']
+        section_fallback = self.lang_config['section_header_fallback']
+        valid_sections = self.lang_config['valid_sections']
+        valid_periods = self.lang_config['valid_periods']
+        default_section = self.lang_config['default_section']
+        
+        print(f"\n  -> Preparing view for '{section_header}'...")
         
         try:
             # Try specific text
-            clicked = await self._js_click_tab(page, "FINANCIAL STATEMENTS AND REPORTS")
+            clicked = await self._js_click_tab(page, section_header)
             if not clicked:
-                 clicked = await self._js_click_tab(page, "Financial Statements")
+                 clicked = await self._js_click_tab(page, section_fallback)
             
             if not clicked:
-                print("  -> Failed to click 'FINANCIAL STATEMENTS AND REPORTS' tab.")
+                print(f"  -> Failed to click '{section_header}' tab.")
                 return reports_data
             
             await page.wait_for_timeout(5000)
@@ -224,99 +322,109 @@ class FinancialReportsScraper:
             
             print("  -> Found main table. Parsing rows sequentially...")
 
+            # Pass config to JS for parsing
+            valid_sections_json = json.dumps(valid_sections, ensure_ascii=False)
+            valid_periods_json = json.dumps(valid_periods, ensure_ascii=False)
+
             # Capture ALL links
-            raw_data = await page.evaluate(r"""() => {
+            raw_data = await page.evaluate(f"""() => {{
                 const rows = Array.from(document.querySelectorAll('.tableStyle table tr'));
-                const results = {};
-                let currentSection = 'General Reports';
-                let columnYears = {}; 
+                const results = {{}};
+                let currentSection = '{default_section}';
+                let columnYears = {{}}; 
                 
-                rows.forEach((row, rowIndex) => {
+                const validSections = {valid_sections_json};
+                const validPeriods = {valid_periods_json};
+                
+                rows.forEach((row, rowIndex) => {{
                     const text = row.innerText.trim();
                     const firstCell = row.querySelector('td');
                     let rowLabel = ''; 
                     if (firstCell) rowLabel = firstCell.innerText.trim();
 
                     // --- 1. Detect Section Headers ---
-                    const validSections = ['Financial Statements', 'XBRL', 'Board Report', 'ESG Report'];
-                    const validPeriods = ['Annual', 'Q1', 'Q2', 'Q3', 'Q4'];
-
-                    if (validSections.includes(text) || validSections.includes(rowLabel)) {
+                    if (validSections.includes(text) || validSections.includes(rowLabel)) {{
                          const sectionName = validSections.includes(text) ? text : rowLabel;
                          currentSection = sectionName;
                          if (!results[currentSection]) results[currentSection] = [];
                          if (text === sectionName) return; 
-                    } 
-                    else if (validPeriods.includes(rowLabel)) {}
-                    else if (rowLabel !== '') {
+                    }} 
+                    else if (validPeriods.includes(rowLabel)) {{}}
+                    else if (rowLabel !== '') {{
                         const potentialYears = Array.from(row.querySelectorAll('th, td')).map(c => c.innerText.trim());
-                        const hasYears = potentialYears.some(t => /^\d{4}$/.test(t));
+                        const hasYears = potentialYears.some(t => /^\\d{{4}}$/.test(t));
                         if (!hasYears) return; 
-                    }
+                    }}
 
                     // --- 2. Detect Years ---
                     const ths = Array.from(row.querySelectorAll('th, td'));
                     const potentialYears = ths.map(cell => cell.innerText.trim());
-                    const hasYears = potentialYears.some(t => /^\d{4}$/.test(t));
+                    const hasYears = potentialYears.some(t => /^\\d{{4}}$/.test(t));
                     
-                    if (hasYears) {
-                        columnYears = {};
-                        ths.forEach((cell, index) => {
+                    if (hasYears) {{
+                        columnYears = {{}};
+                        ths.forEach((cell, index) => {{
                             const txt = cell.innerText.trim();
-                            if (/^\d{4}$/.test(txt)) {
+                            if (/^\\d{{4}}$/.test(txt)) {{
                                 columnYears[index] = txt;
-                            }
-                        });
+                            }}
+                        }});
                         return; 
-                    }
+                    }}
 
                     if (!results[currentSection]) results[currentSection] = [];
 
                     // --- 3. Process Cells ---
                     const cells = Array.from(row.querySelectorAll('td'));
-                    cells.forEach((cell, colIndex) => {
+                    cells.forEach((cell, colIndex) => {{
                          let year = columnYears[colIndex] || "Unknown";
                          let finalPeriod = rowLabel || "Annual";
 
                          const anchors = Array.from(cell.querySelectorAll('a'));
                          
-                         if (anchors.length > 0) {
-                             anchors.forEach(a => {
+                         if (anchors.length > 0) {{
+                             anchors.forEach(a => {{
                                  const href = a.href;
                                  if (!href || href.includes('javascript') || href === '#') return;
-                                 results[currentSection].push({
+                                 results[currentSection].push({{
                                      url: href,
                                      row_label: finalPeriod,
                                      year: year,          
                                      text: a.innerText.trim() 
-                                 });
-                             });
-                         } else {
-                             if (year !== "Unknown" && colIndex > 0) {
+                                 }});
+                             }});
+                         }} else {{
+                             if (year !== "Unknown" && colIndex > 0) {{
                                  const cellText = cell.innerText.trim();
-                                 results[currentSection].push({
+                                 results[currentSection].push({{
                                      url: null,
                                      row_label: finalPeriod,
                                      year: year,
                                      text: cellText || "-"
-                                 });
-                             }
-                         }
-                    });
-                });
+                                 }});
+                             }}
+                         }}
+                    }});
+                }});
                 return results;
-            }""")
+            }}""")
             
             for section, items in raw_data.items():
                 if not items: continue
+                
+                # Normalize section name to English for consistent storage
+                en_section = section
+                if self.lang == 'ar':
+                    en_section = AR_SECTION_TO_EN.get(section, section)
+                
                 clean_items = []
-                print(f"      -> Processing {len(items)} items for {section}...")
+                print(f"      -> Processing {len(items)} items for {section} (-> {en_section})...")
                 
                 for item in items:
                     url = item.get('url') 
                     lower_url = (url or "").lower()
                     
-                    if section == "XBRL":
+                    if en_section == "XBRL":
                         if url and not (".xls" in lower_url): continue
                             
                     f_type = 'none'
@@ -328,6 +436,11 @@ class FinancialReportsScraper:
                     period = item.get('row_label', '')
                     year = item.get('year', '')
                     
+                    # Normalize period to English for consistent storage
+                    en_period = period
+                    if self.lang == 'ar':
+                        en_period = AR_PERIOD_TO_EN.get(period, period)
+                    
                     # --- DOWNLOAD FILE ---
                     local_path = None
                     if url:
@@ -336,15 +449,16 @@ class FinancialReportsScraper:
 
                     clean_items.append({
                         "url": url,
-                        "local_path": local_path,  # Added this field
+                        "local_path": local_path,
                         "file_type": f_type,
-                        "period": period,
+                        "period": en_period,  # Always store English period
                         "year": year,
                         "published_date": item.get('text', '')
                     })
                 
-                reports_data[section] = clean_items
-                print(f"      -> Saved {len(clean_items)} items for {section}")
+                # Use English section name as key for consistency
+                reports_data[en_section] = clean_items
+                print(f"      -> Saved {len(clean_items)} items for {en_section}")
 
         except Exception as e:
             print(f"  -> Error processing statements section: {e}")
@@ -356,6 +470,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Scrape, Generate JSON, and Ingest Financial Reports.")
     parser.add_argument('symbols', nargs='*', help="List of company symbols to process (e.g. 2250 4322)")
     parser.add_argument('--symbol', help="Single symbol (legacy support)")
+    parser.add_argument('--lang', default='en', choices=['en', 'ar'], help="Language: 'en' for English, 'ar' for Arabic (default: en)")
     
     args = parser.parse_args()
     
@@ -365,9 +480,13 @@ async def main():
         raw_symbols.extend(args.symbols)
     if args.symbol:
         raw_symbols.append(args.symbol)
-    
+
+    # Debug print to verify input symbols
+    print(f"DEBUG: raw_symbols before processing: {raw_symbols}")
+
     if not raw_symbols:
-        raw_symbols = ["4322"]
+        print("❌ Error: No symbol(s) provided. Please specify at least one symbol using --symbol or positional argument.")
+        return
 
     # Process symbols to handle commas (e.g., "2284,2200")
     target_symbols = []
@@ -375,6 +494,8 @@ async def main():
         # Split by comma if present, strip whitespace
         cleaned = [s.strip() for s in item.split(',') if s.strip()]
         target_symbols.extend(cleaned)
+
+    lang = args.lang
 
     # Import helper scripts dynamically
     try:
@@ -390,33 +511,32 @@ async def main():
         print("Make sure 'generate_json_from_local.py' and 'ingest_reports.py' exist in backend/scripts/")
         return
 
-    print(f"🚀 Starting automation for {len(target_symbols)} symbols: {target_symbols}")
+    lang_label = "العربية" if lang == 'ar' else "English"
+    print(f"🚀 Starting automation for {len(target_symbols)} symbols: {target_symbols} (Language: {lang_label})")
 
     for idx, sym in enumerate(target_symbols):
         print(f"\n{'='*50}")
-        print(f"🔄 [{idx+1}/{len(target_symbols)}] Processing Symbol: {sym}")
+        print(f"🔄 [{idx+1}/{len(target_symbols)}] Processing Symbol: {sym} ({lang_label})")
         print(f"{'='*50}")
         
-        # --- passo 1: Scrape & Download ---
-        print(f"📡 1. Starting Scraper for {sym}...")
-        scraper = FinancialReportsScraper(symbol=str(sym), headless=False) # Headless False as per original
-        # The scrape method downloads the files internally
+        # --- Step 1: Scrape & Download ---
+        print(f"📡 1. Starting Scraper for {sym} ({lang_label})...")
+        scraper = FinancialReportsScraper(symbol=str(sym), headless=False, lang=lang)
         await scraper.scrape()
         
-        # --- Paso 2: Generate JSON from Local Files ---
+        # --- Step 2: Generate JSON from Local Files ---
         print(f"\n📝 2. Generating JSON from downloaded files for {sym}...")
         try:
-            # Synchronous call to the imported script function
-            generate_json_from_local(str(sym))
+            lang_suffix = f"_{lang}" if lang != 'en' else ""
+            generate_json_from_local(str(sym), folder_suffix=lang_suffix)
         except Exception as e:
             print(f"❌ Failed to generate JSON for {sym}: {e}")
-            continue # Skip ingestion if JSON generation fails
+            continue
             
         # --- Step 3: Ingest Reports ---
-        print(f"\n📨 3. Ingesting data for {sym}...")
+        print(f"\n📨 3. Ingesting data for {sym} ({lang_label})...")
         try:
-            # Synchronous call to the imported script function
-            ingest_data(str(sym))
+            ingest_data(str(sym), language=lang)
         except Exception as e:
             print(f"❌ Failed to ingest data for {sym}: {e}")
             
@@ -425,7 +545,7 @@ async def main():
             print(f"\n⏳ Waiting 5 seconds before next symbol...")
             await asyncio.sleep(5)
 
-    print(f"\n✅ All {len(target_symbols)} symbols processed successfully.")
+    print(f"\n✅ All {len(target_symbols)} symbols processed successfully ({lang_label}).")
 
 if __name__ == "__main__":
     asyncio.run(main())

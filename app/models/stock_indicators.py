@@ -69,11 +69,19 @@ class StockIndicator(Base):
     rsi_14_9days_ago = Column(Numeric(5, 2), nullable=True)    # RSI14[9] - قيمة RSI من 9 أيام مضت
     stamp_a_value = Column(Numeric(5, 2), nullable=True)      # قيمة A = RSI14 - RSI14[9] + SMA3(RSI3)
     
-    # Stamp Plots
+    # Stamp Plots - Daily
     stamp_s9rsi = Column(Numeric(5, 2), nullable=True)        # S9rsi - أحمر
     stamp_e45cfg = Column(Numeric(5, 2), nullable=True)       # E45cfg - أخضر
     stamp_e45rsi = Column(Numeric(5, 2), nullable=True)       # E45rsi - أصفر
     stamp_e20sma3 = Column(Numeric(5, 2), nullable=True)      # E20(sma3(rsi3)) - أسود
+    
+    # Stamp Weekly - مكونات STAMP الأسبوعية
+    rsi_14_9days_ago_w = Column(Numeric(5, 2), nullable=True)  # RSI14[9] Weekly
+    stamp_a_value_w = Column(Numeric(5, 2), nullable=True)     # A value Weekly
+    stamp_s9rsi_w = Column(Numeric(5, 2), nullable=True)       # SMA9(RSI14) Weekly
+    stamp_e45cfg_w = Column(Numeric(5, 2), nullable=True)      # EMA45(CFG) Weekly
+    stamp_e45rsi_w = Column(Numeric(5, 2), nullable=True)      # EMA45(RSI14) Weekly
+    stamp_e20sma3_w = Column(Numeric(5, 2), nullable=True)     # EMA20(SMA3(RSI3)) Weekly
     
     # ============ 4. CFG ANALYSIS ============
     # CFG = RSI14 - RSI14[9] + SMA(RSI3, 3)

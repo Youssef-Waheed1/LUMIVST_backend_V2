@@ -52,6 +52,8 @@ class IndicatorsDataService:
         df['close'] = df['close'].apply(convert_to_float)
         df.dropna(subset=['close'], inplace=True)
         df.set_index('date', inplace=True)
+        # Round close to 1 decimal to match TradingView display (closest tenth)
+        df['close'] = df['close'].apply(lambda x: round(x, 1) if not pd.isna(x) else x)
         df.sort_index(inplace=True)
         
         return df if len(df) >= 100 else None
@@ -72,6 +74,11 @@ class IndicatorsDataService:
         
         if len(df_weekly) < 20:
             return None
+
+        # Round weekly close to 1 decimal (TradingView's weekly close rounding)
+        df_weekly['close'] = df_weekly['close'].apply(lambda x: round(x, 1) if not pd.isna(x) else x)
+        # expose weekly close with '_w' suffix so merged dataframe contains it
+        df_weekly['close_w'] = df_weekly['close']
         
         # استخراج السلاسل الزمنية الأسبوعية
         closes_w = df_weekly['close'].tolist()
@@ -139,6 +146,18 @@ class IndicatorsDataService:
         df_weekly['cfg_ema20_w'] = pd.Series(cfg_w_ema20, index=df_weekly.index)
         df_weekly['cfg_ema45_w'] = pd.Series(cfg_w_ema45, index=df_weekly.index)
         df_weekly['cfg_wma45_w'] = pd.Series(cfg_w_wma45, index=df_weekly.index)
+        
+        # STAMP Weekly Components - إضافة حقول STAMP الأسبوعية المفقودة
+        rsi_14_9days_ago_w = []
+        for i in range(len(rsi_w)):
+            rsi_14_9days_ago_w.append(rsi_w[i-9] if i >= 9 and rsi_w[i-9] is not None else None)
+        
+        df_weekly['rsi_14_9days_ago_w'] = pd.Series(rsi_14_9days_ago_w, index=df_weekly.index)
+        df_weekly['stamp_a_value_w'] = pd.Series(cfg_w_series, index=df_weekly.index)  # A = CFG
+        df_weekly['stamp_s9rsi_w'] = pd.Series(sma9_rsi_w, index=df_weekly.index)  # SMA9(RSI14)
+        df_weekly['stamp_e45cfg_w'] = pd.Series(cfg_w_ema45, index=df_weekly.index)  # EMA45(CFG)
+        df_weekly['stamp_e45rsi_w'] = pd.Series(ema45_rsi_w, index=df_weekly.index)  # EMA45(RSI14)
+        df_weekly['stamp_e20sma3_w'] = pd.Series(ema20_sma3_w, index=df_weekly.index)  # EMA20(SMA3(RSI3))
         
         # Trend Weekly
         df_weekly['sma4_w'] = pd.Series(trend_w_components['sma4'], index=df_weekly.index)
@@ -291,6 +310,7 @@ class IndicatorsDataService:
             'cfg_sma20': stamp_components['cfg_sma20'][idx] if idx < len(stamp_components['cfg_sma20']) else None,
             'cfg_ema20': stamp_components['cfg_ema20'][idx] if idx < len(stamp_components['cfg_ema20']) else None,
             'cfg_ema45': stamp_components['cfg_ema45'][idx] if idx < len(stamp_components['cfg_ema45']) else None,
+            'cfg_wma45': stamp_components['cfg_wma45'][idx] if idx < len(stamp_components['cfg_wma45']) else None,
             'stamp_s9rsi': rsi_components['sma9_rsi'][idx] if idx < len(rsi_components['sma9_rsi']) else None,
             'stamp_e45cfg': stamp_components['cfg_ema45'][idx] if idx < len(stamp_components['cfg_ema45']) else None,
             'stamp_e45rsi': rsi_components['ema45_rsi'][idx] if idx < len(rsi_components['ema45_rsi']) else None,
@@ -588,6 +608,14 @@ class IndicatorsDataService:
             'cfg_ema20_w': df_merged.iloc[idx]['cfg_ema20_w'] if 'cfg_ema20_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['cfg_ema20_w']) else None,
             'cfg_ema45_w': df_merged.iloc[idx]['cfg_ema45_w'] if 'cfg_ema45_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['cfg_ema45_w']) else None,
             'cfg_wma45_w': df_merged.iloc[idx]['cfg_wma45_w'] if 'cfg_wma45_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['cfg_wma45_w']) else None,
+            
+            # STAMP Weekly
+            'rsi_14_9days_ago_w': df_merged.iloc[idx]['rsi_14_9days_ago_w'] if 'rsi_14_9days_ago_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['rsi_14_9days_ago_w']) else None,
+            'stamp_a_value_w': df_merged.iloc[idx]['stamp_a_value_w'] if 'stamp_a_value_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['stamp_a_value_w']) else None,
+            'stamp_s9rsi_w': df_merged.iloc[idx]['stamp_s9rsi_w'] if 'stamp_s9rsi_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['stamp_s9rsi_w']) else None,
+            'stamp_e45cfg_w': df_merged.iloc[idx]['stamp_e45cfg_w'] if 'stamp_e45cfg_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['stamp_e45cfg_w']) else None,
+            'stamp_e45rsi_w': df_merged.iloc[idx]['stamp_e45rsi_w'] if 'stamp_e45rsi_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['stamp_e45rsi_w']) else None,
+            'stamp_e20sma3_w': df_merged.iloc[idx]['stamp_e20sma3_w'] if 'stamp_e20sma3_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['stamp_e20sma3_w']) else None,
             
             # Weekly Components
             'close_w': df_merged.iloc[idx]['close_w'] if 'close_w' in df_merged.columns and not pd.isna(df_merged.iloc[idx]['close_w']) else None,

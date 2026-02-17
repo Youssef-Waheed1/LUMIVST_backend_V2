@@ -9,29 +9,46 @@ from app.models.stock_indicators import StockIndicator
 
 router = APIRouter()
 
-@router.get("/technical-screener")
+@router.get("/technical-screener/screener")
 def get_technical_screener_data(
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    symbol: Optional[str] = None
+    symbol: Optional[str] = None,
+    min_score: Optional[int] = Query(None, ge=0),
+    passing_only: bool = Query(False)
 ):
+    """
+    Returns technical screener rows with optional filtering.
+    Endpoint path matches frontend: `/api/technical-screener/screener`.
+    Returns JSON: { data: [...], total: N }
+    """
     query = db.query(StockIndicator)
-    
+
     if symbol:
         query = query.filter(StockIndicator.symbol == symbol)
-        
+
+    if min_score is not None:
+        query = query.filter(StockIndicator.score >= min_score)
+
+    if passing_only:
+        query = query.filter(StockIndicator.final_signal == True)
+
     # Default sort by date desc, then symbol
     query = query.order_by(desc(StockIndicator.date), StockIndicator.symbol)
-    
+
+    total = query.count()
+
     results = query.offset(offset).limit(limit).all()
-    
-    return [indicator_to_dict(ind) for ind in results]
+
+    return {
+        'data': [indicator_to_dict(ind) for ind in results],
+        'total': total
+    }
 
 def indicator_to_dict(ind: StockIndicator) -> dict:
-    """✅ تحويل جميع المؤشرات إلى Dictionary - نسخة كاملة جداً مع كل الحقول"""
+    """✅ تحويل جميع المؤشرات إلى Dictionary - نسخة كاملة شاملة جداً"""
     
-    # دالة مساعدة للتحويل الآمن
     def safe_float(value):
         return float(value) if value is not None else None
     
@@ -48,53 +65,119 @@ def indicator_to_dict(ind: StockIndicator) -> dict:
         'company_name': ind.company_name,
         'date': str(ind.date) if ind.date else None,
         'close': safe_float(ind.close),
-        'created_at': str(ind.created_at) if ind.created_at else None,
-        'updated_at': str(ind.updated_at) if ind.updated_at else None,
         
-        # ============ 1. RSI Indicator ============
-        'rsi': safe_float(ind.rsi_14),                    # Alias
+        # ============ DAILY: RSI Components ============
         'rsi_14': safe_float(ind.rsi_14),
+        'rsi_3': safe_float(ind.rsi_3),
         'sma9_rsi': safe_float(ind.sma9_rsi),
         'wma45_rsi': safe_float(ind.wma45_rsi),
+        'ema45_rsi': safe_float(ind.ema45_rsi),                # ✅ كان ناقص
+        'sma3_rsi3': safe_float(ind.sma3_rsi3),
+        'ema20_sma3': safe_float(ind.ema20_sma3),              # ✅ كان ناقص
         
-        # ============ 2. The Number Indicator ============
+        # ============ DAILY: The Number Components ============
         'sma9_close': safe_float(ind.sma9_close),
+        'high_sma13': safe_float(ind.high_sma13),              # ✅ كان ناقص
+        'low_sma13': safe_float(ind.low_sma13),                # ✅ كان ناقص
+        'high_sma65': safe_float(ind.high_sma65),              # ✅ كان ناقص
+        'low_sma65': safe_float(ind.low_sma65),                # ✅ كان ناقص
         'the_number': safe_float(ind.the_number),
         'the_number_hl': safe_float(ind.the_number_hl),
         'the_number_ll': safe_float(ind.the_number_ll),
         
-        # ============ 3. Stamp Indicator ============
+        # ============ DAILY: STAMP Components ============
         'rsi_14_9days_ago': safe_float(ind.rsi_14_9days_ago),
-        'rsi_3': safe_float(ind.rsi_3),
-        'sma3_rsi3': safe_float(ind.sma3_rsi3),
         'stamp_a_value': safe_float(ind.stamp_a_value),
         'stamp_s9rsi': safe_float(ind.stamp_s9rsi),
         'stamp_e45cfg': safe_float(ind.stamp_e45cfg),
         'stamp_e45rsi': safe_float(ind.stamp_e45rsi),
         'stamp_e20sma3': safe_float(ind.stamp_e20sma3),
         
-        # ============ 4. Trend Screener - Daily ============
-        'sma4': safe_float(ind.sma4),                      # ✅ Daily SMA4
-        'sma9': safe_float(ind.sma9),                      # ✅ Daily SMA9
-        'sma18': safe_float(ind.sma18),                    # ✅ Daily SMA18
-        'wma45_close': safe_float(ind.wma45_close),        # ✅ Daily WMA45
-        'cci': safe_float(ind.cci),                        # ✅ Daily CCI
-        'cci_ema20': safe_float(ind.cci_ema20),            # ✅ Daily CCI EMA20
-        'aroon_up': safe_float(ind.aroon_up),              # ✅ Daily Aroon Up
-        'aroon_down': safe_float(ind.aroon_down),          # ✅ Daily Aroon Down
+        # ============ DAILY: CFG Analysis ============
+        'cfg_daily': safe_float(ind.cfg_daily),
+        'cfg_sma4': safe_float(ind.cfg_sma4),
+        'cfg_sma9': safe_float(ind.cfg_sma9),
+        'cfg_sma20': safe_float(ind.cfg_sma20),                # ✅ كان ناقص
+        'cfg_ema20': safe_float(ind.cfg_ema20),
+        'cfg_ema45': safe_float(ind.cfg_ema45),
+        'cfg_wma45': safe_float(ind.cfg_wma45),
         
-        # ============ 5. Trend Screener - Weekly ============
-        'close_w': safe_float(ind.close_w),                 # ✅ Weekly Close
-        'sma4_w': safe_float(ind.sma4_w),                   # ✅ Weekly SMA4
-        'sma9_w': safe_float(ind.sma9_w),                   # ✅ Weekly SMA9
-        'sma18_w': safe_float(ind.sma18_w),                 # ✅ Weekly SMA18
-        'wma45_close_w': safe_float(ind.wma45_close_w),     # ✅ Weekly WMA45
-        'cci_w': safe_float(ind.cci_w),                     # ✅ Weekly CCI
-        'cci_ema20_w': safe_float(ind.cci_ema20_w),         # ✅ Weekly CCI EMA20
-        'aroon_up_w': safe_float(ind.aroon_up_w),           # ✅ Weekly Aroon Up
-        'aroon_down_w': safe_float(ind.aroon_down_w),       # ✅ Weekly Aroon Down
+        # ============ DAILY: Trend Screener ============
+        'sma4': safe_float(ind.sma4),
+        'sma9': safe_float(ind.sma9),
+        'sma18': safe_float(ind.sma18),
+        'wma45_close': safe_float(ind.wma45_close),
+        'cci': safe_float(ind.cci),
+        'cci_ema20': safe_float(ind.cci_ema20),
+        'aroon_up': safe_float(ind.aroon_up),
+        'aroon_down': safe_float(ind.aroon_down),
         
-        # ============ 6. RSI Screener Conditions ============
+        # ============ WEEKLY: RSI Components ============
+        'rsi_w': safe_float(ind.rsi_w),                        # ✅ كان ناقص
+        'rsi_3_w': safe_float(ind.rsi_3_w),                    # ✅ كان ناقص
+        'sma9_rsi_w': safe_float(ind.sma9_rsi_w),
+        'wma45_rsi_w': safe_float(ind.wma45_rsi_w),
+        'ema45_rsi_w': safe_float(ind.ema45_rsi_w),            # ✅ كان ناقص
+        'sma3_rsi3_w': safe_float(ind.sma3_rsi3_w),            # ✅ كان ناقص
+        'ema20_sma3_w': safe_float(ind.ema20_sma3_w),          # ✅ كان ناقص
+        
+        # ============ WEEKLY: The Number Components ============
+        'sma9_close_w': safe_float(ind.sma9_close_w),          # ✅ كان ناقص
+        'high_sma13_w': safe_float(ind.high_sma13_w),          # ✅ كان ناقص
+        'low_sma13_w': safe_float(ind.low_sma13_w),            # ✅ كان ناقص
+        'high_sma65_w': safe_float(ind.high_sma65_w),          # ✅ كان ناقص
+        'low_sma65_w': safe_float(ind.low_sma65_w),            # ✅ كان ناقص
+        'the_number_w': safe_float(ind.the_number_w),          # ✅ كان ناقص
+        'the_number_hl_w': safe_float(ind.the_number_hl_w),    # ✅ كان ناقص
+        'the_number_ll_w': safe_float(ind.the_number_ll_w),    # ✅ كان ناقص
+        
+        # ============ WEEKLY: CFG Analysis ============
+        'cfg_w': safe_float(ind.cfg_w),
+        'cfg_sma4_w': safe_float(ind.cfg_sma4_w),              # ✅ كان ناقص
+        'cfg_sma9_w': safe_float(ind.cfg_sma9_w),              # ✅ كان ناقص
+        'cfg_ema20_w': safe_float(ind.cfg_ema20_w),
+        'cfg_ema45_w': safe_float(ind.cfg_ema45_w),
+        'cfg_wma45_w': safe_float(ind.cfg_wma45_w),
+        
+        # ============ WEEKLY: STAMP Components ============
+        'rsi_14_9days_ago_w': safe_float(ind.rsi_14_9days_ago_w),
+        'stamp_a_value_w': safe_float(ind.stamp_a_value_w),
+        'stamp_s9rsi_w': safe_float(ind.stamp_s9rsi_w),
+        'stamp_e45cfg_w': safe_float(ind.stamp_e45cfg_w),
+        'stamp_e45rsi_w': safe_float(ind.stamp_e45rsi_w),
+        'stamp_e20sma3_w': safe_float(ind.stamp_e20sma3_w),
+        
+        # ============ WEEKLY: Trend Screener ============
+        'close_w': safe_float(ind.close_w),                    # ✅ كان ناقص
+        'sma4_w': safe_float(ind.sma4_w),
+        'sma9_w': safe_float(ind.sma9_w),
+        'sma18_w': safe_float(ind.sma18_w),
+        'wma45_close_w': safe_float(ind.wma45_close_w),
+        'cci_w': safe_float(ind.cci_w),
+        'cci_ema20_w': safe_float(ind.cci_ema20_w),
+        'aroon_up_w': safe_float(ind.aroon_up_w),
+        'aroon_down_w': safe_float(ind.aroon_down_w),
+        
+        # ============ Signal & Condition Flags ============
+        'rsi_55_70': safe_bool(ind.rsi_55_70),
+        'cfg_gt_50_daily': safe_bool(ind.cfg_gt_50_daily),
+        'cfg_ema45_gt_50': safe_bool(ind.cfg_ema45_gt_50),
+        'cfg_ema20_gt_50': safe_bool(ind.cfg_ema20_gt_50),
+        'cfg_gt_50_w': safe_bool(ind.cfg_gt_50_w),
+        'cfg_ema45_gt_50_w': safe_bool(ind.cfg_ema45_gt_50_w),
+        'cfg_ema20_gt_50_w': safe_bool(ind.cfg_ema20_gt_50_w),
+        'sma9_gt_tn_daily': safe_bool(ind.sma9_gt_tn_daily),
+        'sma9_gt_tn_weekly': safe_bool(ind.sma9_gt_tn_weekly),
+        'rsi_lt_80_d': safe_bool(ind.rsi_lt_80_d),
+        'rsi_lt_80_w': safe_bool(ind.rsi_lt_80_w),
+        'sma9_rsi_lte_75_d': safe_bool(ind.sma9_rsi_lte_75_d),
+        'sma9_rsi_lte_75_w': safe_bool(ind.sma9_rsi_lte_75_w),
+        'ema45_rsi_lte_70_d': safe_bool(ind.ema45_rsi_lte_70_d),
+        'ema45_rsi_lte_70_w': safe_bool(ind.ema45_rsi_lte_70_w),
+        'rsi_gt_wma45_d': safe_bool(ind.rsi_gt_wma45_d),
+        'rsi_gt_wma45_w': safe_bool(ind.rsi_gt_wma45_w),
+        'sma9rsi_gt_wma45rsi_d': safe_bool(ind.sma9rsi_gt_wma45rsi_d),
+        'sma9rsi_gt_wma45rsi_w': safe_bool(ind.sma9rsi_gt_wma45rsi_w),
         'price_gt_sma18': safe_bool(ind.price_gt_sma18),
         'price_gt_sma9_weekly': safe_bool(ind.price_gt_sma9_weekly),
         'sma_trend_daily': safe_bool(ind.sma_trend_daily),
@@ -107,55 +190,9 @@ def indicator_to_dict(ind: StockIndicator) -> dict:
         'is_etf_or_index': safe_bool(ind.is_etf_or_index),
         'has_gap': safe_bool(ind.has_gap),
         'trend_signal': safe_bool(ind.trend_signal),
-        
-        # ============ 7. RSI Weekly Values ============
-        'rsi_w': safe_float(ind.rsi_w),
-        'rsi_3_w': safe_float(ind.rsi_3_w),
-        'sma9_rsi_w': safe_float(ind.sma9_rsi_w),
-        'wma45_rsi_w': safe_float(ind.wma45_rsi_w),
-        'ema45_rsi_w': safe_float(ind.ema45_rsi_w),
-        
-        # ============ 8. CFG Analysis ============
-        'cfg_daily': safe_float(ind.cfg_daily),
-        'cfg_sma9': safe_float(ind.cfg_sma9),
-        'cfg_ema20': safe_float(ind.cfg_ema20),
-        'cfg_ema45': safe_float(ind.cfg_ema45),
-        'cfg_wma45': safe_float(ind.cfg_wma45),
-        'cfg_w': safe_float(ind.cfg_w),
-        'cfg_ema20_w': safe_float(ind.cfg_ema20_w),
-        'cfg_ema45_w': safe_float(ind.cfg_ema45_w),
-        'cfg_wma45_w': safe_float(ind.cfg_wma45_w),
-        
-        # ============ 9. CFG Conditions ============
-        'cfg_gt_50_daily': safe_bool(ind.cfg_gt_50_daily),
-        'cfg_ema45_gt_50': safe_bool(ind.cfg_ema45_gt_50),
-        'cfg_ema20_gt_50': safe_bool(ind.cfg_ema20_gt_50),
-        'cfg_gt_50_w': safe_bool(ind.cfg_gt_50_w),
-        'cfg_ema45_gt_50_w': safe_bool(ind.cfg_ema45_gt_50_w),
-        'cfg_ema20_gt_50_w': safe_bool(ind.cfg_ema20_gt_50_w),
-        
-        # ============ 10. RSI Screener Final ============
-        'sma9_gt_tn_daily': safe_bool(ind.sma9_gt_tn_daily),
-        'sma9_gt_tn_weekly': safe_bool(ind.sma9_gt_tn_weekly),
-        'rsi_lt_80_d': safe_bool(ind.rsi_lt_80_d),
-        'rsi_lt_80_w': safe_bool(ind.rsi_lt_80_w),
-        'sma9_rsi_lte_75_d': safe_bool(ind.sma9_rsi_lte_75_d),
-        'sma9_rsi_lte_75_w': safe_bool(ind.sma9_rsi_lte_75_w),
-        'ema45_rsi_lte_70_d': safe_bool(ind.ema45_rsi_lte_70_d),
-        'ema45_rsi_lte_70_w': safe_bool(ind.ema45_rsi_lte_70_w),
-        'rsi_55_70': safe_bool(ind.rsi_55_70),
-        'rsi_gt_wma45_d': safe_bool(ind.rsi_gt_wma45_d),
-        'rsi_gt_wma45_w': safe_bool(ind.rsi_gt_wma45_w),
-        'sma9rsi_gt_wma45rsi_d': safe_bool(ind.sma9rsi_gt_wma45rsi_d),
-        'sma9rsi_gt_wma45rsi_w': safe_bool(ind.sma9rsi_gt_wma45rsi_w),
-        
-        # STAMP Conditions
         'stamp_daily': safe_bool(ind.stamp_daily),
         'stamp_weekly': safe_bool(ind.stamp_weekly),
         'stamp': safe_bool(ind.stamp),
-        
-        # ============ Final Results ============
         'final_signal': safe_bool(ind.final_signal),
         'score': safe_int(ind.score),
-        'total_conditions': 15,
     }

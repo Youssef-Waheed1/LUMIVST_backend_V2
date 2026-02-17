@@ -238,22 +238,21 @@ def calculate_rsi_on_shifted_series(closes: List[float], period: int = 14, shift
     Returns:
         قيمة RSI أو None
     """
-    if not closes or len(closes) < period + shift + 1:
+    # In Pine, `ta.rsi(close[9], 14)` or using `rsi14[9]` refers to the RSI value
+    # shifted by `shift` bars. The correct equivalent is to compute the RSI
+    # series for the full `closes` and return the value `shift` bars ago.
+    if not closes:
         return None
-    
-    # أخذ السلسلة من بداية البيانات حتى آخر نقطة قبل shift
-    # close[9] تعني السعر قبل 9 أيام
-    end_idx = len(closes) - shift
-    start_idx = max(0, end_idx - period - 100)  # نأخذ فترة كافية
-    
-    series = closes[start_idx:end_idx]
-    
-    if len(series) < period + 1:
+
+    rsi_series = calculate_rsi_pinescript(closes, period)
+    if not rsi_series:
         return None
-    
-    rsi_shifted = calculate_rsi_pinescript(series, period)
-    
-    return rsi_shifted[-1] if rsi_shifted else None
+
+    target_idx = len(rsi_series) - 1 - shift
+    if target_idx < 0 or target_idx >= len(rsi_series):
+        return None
+
+    return rsi_series[target_idx]
 
 
 def calculate_cfg_series(rsi14_series: List[float], rsi3_series: List[float]) -> List[Optional[float]]:

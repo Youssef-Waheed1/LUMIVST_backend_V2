@@ -8,7 +8,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.services.storage import storage_service
-from app.models.official_filings import CompanyOfficialFiling, FilingCategory, FilingPeriod, FileType
+from app.models.official_filings import CompanyOfficialFiling, FilingCategory, FilingPeriod, FileType, FilingLanguage
 from app.models.scraped_reports import Company
 from app.schemas.official_filings import IngestOfficialFilingsRequest
 
@@ -41,7 +41,7 @@ def map_file_type(ft_str: str) -> FileType:
     if key in ft_map: return ft_map[key]
     return FileType.OTHER
 
-async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session_factory):
+async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session_factory, language: str = 'en'):
     """
     Background task to process items: Download -> S3 -> DB.
     """
@@ -87,7 +87,7 @@ async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session
                 
                 # Sanitize filename
                 filename = f"{period}_{category}".replace(" ", "_")
-                destination_path = f"{symbol}/{year}/{filename}.{ext}"
+                destination_path = f"{symbol}/{year}/{language}/{filename}.{ext}"
                 
                 print(f"⬇️ Processing {filename} ({'Local' if local_path else 'Download'})...")
                 
@@ -114,7 +114,8 @@ async def process_ingestion(symbol: str, items: List[Dict[str, Any]], db_session
                     file_url=public_url,
                     source_url=source_url,
                     file_type=item.get('file_type_enum'),
-                    file_size_bytes=0 # We could capture this from storage service return or header
+                    file_size_bytes=0,
+                    language=FilingLanguage(language)
                 )
                 db.add(new_record)
                 db.commit()
@@ -156,28 +157,43 @@ async def ingest_official_reports(
             # Check if exists in DB
             # If URL exists, check by URL
             exists = None
-            if item.url:
-                exists = db.query(CompanyOfficialFiling).filter(
-                    CompanyOfficialFiling.source_url == item.url,
-                    CompanyOfficialFiling.company_symbol == payload.symbol
-                ).first()
-            elif item.local_path:
-                # If no URL, check by Year/Period/Category to avoid duplicates
-                per_enum_check = map_period(item.period)
-                cat_enum_check = map_category(category_name)
-                exists = db.query(CompanyOfficialFiling).filter(
-                    CompanyOfficialFiling.company_symbol == payload.symbol,
-                    CompanyOfficialFiling.year == item.year,
-                    CompanyOfficialFiling.period == per_enum_check,
-                    CompanyOfficialFiling.category == cat_enum_check
-                ).first()
+            try:
+                if item.url:
+                    exists = db.query(CompanyOfficialFiling).filter(
+                        CompanyOfficialFiling.source_url == item.url,
+                        CompanyOfficialFiling.company_symbol == payload.symbol,
+                        CompanyOfficialFiling.language == payload.language  # CRITICAL: Check language here too
+                    ).first()
+                elif item.local_path:
+                    # If no URL, check by Year/Period/Category to avoid duplicates
+                    try:
+                        per_enum_check = map_period(item.period)
+                        cat_enum_check = map_category(category_name)
+                    except ValueError as e:
+                        print(f"⚠️ Validation skipped for {item.local_path}: {e}")
+                        continue
+
+                    exists = db.query(CompanyOfficialFiling).filter(
+                        CompanyOfficialFiling.company_symbol == payload.symbol,
+                        CompanyOfficialFiling.year == int(item.year) if str(item.year).isdigit() else 0,
+                        CompanyOfficialFiling.period == per_enum_check,
+                        CompanyOfficialFiling.category == cat_enum_check,
+                        CompanyOfficialFiling.language == payload.language  # CRITICAL: Check language too
+                    ).first()
+            except Exception as e:
+                print(f"❌ DB Check Error: {e}")
+                continue
             
             if exists:
                 continue
                 
             # Prepare data for processing
-            per_enum = map_period(item.period)
-            ft_enum = map_file_type(item.file_type)
+            try:
+                per_enum = map_period(item.period)
+                ft_enum = map_file_type(item.file_type)
+            except Exception as e:
+                print(f"❌ Mapping Error for {item}: {e}")
+                continue
             
             # Parse date if possible (scraper returns text like '2025-01-01' or similar)
             # You might need a date parser helper here
@@ -204,7 +220,7 @@ async def ingest_official_reports(
     # We need a new session factory logic. 
     from app.core.database import SessionLocal
     
-    background_tasks.add_task(process_ingestion, payload.symbol, products_to_process, SessionLocal)
+    background_tasks.add_task(process_ingestion, payload.symbol, products_to_process, SessionLocal, payload.language)
     
     return {"message": f"Queued {len(products_to_process)} reports for background processing."}
 
@@ -233,7 +249,8 @@ def get_company_reports(symbol: str, db: Session = Depends(get_db)):
             "year": r.year,
             "file_url": r.file_url,
             "published_date": r.published_date,
-            "file_type": r.file_type.value if r.file_type else None
+            "file_type": r.file_type.value if r.file_type else None,
+            "language": r.language.value if r.language else 'en'
         }
         if r.category.value in grouped:
             grouped[r.category.value].append(item)
