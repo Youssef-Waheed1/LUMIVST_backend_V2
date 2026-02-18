@@ -409,11 +409,35 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
-        # If the account is not yet approved by an admin, deny issuing tokens
+        # If the account is not yet approved by an admin, return 403 with user info
+        # Frontend will show pending approval page and poll for approval
         if not user.is_approved:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+            print(f"⏳ Account pending approval for {user.email}")
+            # Create a temporary JWT just for checking approval status (not for API access)
+            # This is limited-scope token to verify approval status
+            temp_token = create_access_token(data={
+                "sub": str(user.id), 
+                "email": user.email,
+                "is_approved": False,
+                "is_admin": False,
+                "scope": "check_approval_only"
+            })
+            # Return 403 but with user info so frontend can poll for approval
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل.",
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "full_name": user.full_name,
+                        "is_verified": user.is_verified,
+                        "is_approved": user.is_approved,
+                        "is_admin": user.is_admin
+                    },
+                    "temp_token": temp_token  # Limited token for checking status
+                }
             )
 
         # Create JWT for approved users
@@ -519,11 +543,35 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(user)
         
-        # If the account is not yet approved by an admin, deny issuing tokens
+        # If the account is not yet approved by an admin, return 403 with user info
+        # Frontend will show pending approval page and poll for approval
         if not user.is_approved:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+            print(f"⏳ Account pending approval for {user.email}")
+            # Create a temporary JWT just for checking approval status (not for API access)
+            # This is limited-scope token to verify approval status
+            temp_token = create_access_token(data={
+                "sub": str(user.id), 
+                "email": user.email,
+                "is_approved": False,
+                "is_admin": False,
+                "scope": "check_approval_only"
+            })
+            # Return 403 but with user info so frontend can poll for approval
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل.",
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "full_name": user.full_name,
+                        "is_verified": user.is_verified,
+                        "is_approved": user.is_approved,
+                        "is_admin": user.is_admin
+                    },
+                    "temp_token": temp_token  # Limited token for checking status
+                }
             )
 
         # Create JWT for approved users
