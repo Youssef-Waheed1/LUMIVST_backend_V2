@@ -344,6 +344,11 @@ async def google_login():
 @router.post("/google/callback")
 async def google_callback(code: str, db: Session = Depends(get_db)):
     try:
+        # Check if Google credentials are configured
+        if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+            print("❌ Google credentials not configured (GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing)")
+            raise HTTPException(status_code=500, detail="Google OAuth configuration is missing")
+            
         token_url = "https://oauth2.googleapis.com/token"
         redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/google"
         data = {
@@ -359,18 +364,33 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             token_data = response.json()
             
         if "error" in token_data:
-            print(f"Google Token Error: {token_data}")
-            raise HTTPException(status_code=400, detail=token_data.get("error_description", "Google Login Failed"))
+            error_msg = token_data.get("error_description", token_data.get("error", "Google Login Failed"))
+            print(f"❌ Google Token Error: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
             
         id_token = token_data.get("id_token")
+        access_token_from_google = token_data.get("access_token")
+        
+        if not access_token_from_google:
+            print(f"❌ No access token from Google: {token_data}")
+            raise HTTPException(status_code=400, detail="لم يتم الحصول على رمز الولوج من Google")
         
         # Get user info
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={token_data['access_token']}")
+            response = await client.get(f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={access_token_from_google}")
             user_info = response.json()
             
+        if response.status_code != 200:
+            error_msg = user_info.get("error_description", "Failed to get user info from Google")
+            print(f"❌ Google User Info Error: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
         email = user_info.get("email")
         name = user_info.get("name")
+        
+        if not email:
+            print("❌ Email not provided by Google")
+            raise HTTPException(status_code=400, detail="لم تقدم Google بريدك الإلكتروني")
         
         # Find or create user
         user = db.query(User).filter(User.email == email).first()
@@ -417,10 +437,13 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                 "is_admin": user.is_admin
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
-        print(f"❌ Google Callback Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Google Login Error: {str(e)}")
+        error_msg = str(e)
+        print(f"❌ Google Callback Error: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Google Login Error: {error_msg}")
 
 # Social Login - Facebook
 @router.get("/facebook/login")
@@ -432,76 +455,102 @@ async def facebook_login():
 
 @router.post("/facebook/callback")
 async def facebook_callback(code: str, db: Session = Depends(get_db)):
-    token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
-    redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/facebook"
-    params = {
-        "client_id": settings.FACEBOOK_CLIENT_ID,
-        "client_secret": settings.FACEBOOK_CLIENT_SECRET,
-        "redirect_uri": redirect_uri,
-        "code": code,
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.get(token_url, params=params)
-        token_data = response.json()
+    try:
+        # Check if Facebook credentials are configured
+        if not settings.FACEBOOK_CLIENT_ID or not settings.FACEBOOK_CLIENT_SECRET:
+            print("❌ Facebook credentials not configured (FACEBOOK_CLIENT_ID or FACEBOOK_CLIENT_SECRET missing)")
+            raise HTTPException(status_code=500, detail="Facebook OAuth configuration is missing")
+            
+        token_url = "https://graph.facebook.com/v18.0/oauth/access_token"
+        redirect_uri = f"{settings.FRONTEND_URL}/auth/callback/facebook"
+        params = {
+            "client_id": settings.FACEBOOK_CLIENT_ID,
+            "client_secret": settings.FACEBOOK_CLIENT_SECRET,
+            "redirect_uri": redirect_uri,
+            "code": code,
+        }
         
-    if "error" in token_data:
-        raise HTTPException(status_code=400, detail=token_data.get("error", {}).get("message", "Facebook Login Failed"))
+        async with httpx.AsyncClient() as client:
+            response = await client.get(token_url, params=params)
+            token_data = response.json()
+            
+        if "error" in token_data:
+            error_msg = token_data.get("error", {}).get("message", "Facebook Login Failed")
+            print(f"❌ Facebook Token Error: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+            
+        access_token_from_facebook = token_data.get("access_token")
         
-    access_token = token_data["access_token"]
-    
-    # Get user info
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"https://graph.facebook.com/me?fields=id,name,email&access_token={access_token}")
-        user_info = response.json()
+        if not access_token_from_facebook:
+            print(f"❌ No access token from Facebook: {token_data}")
+            raise HTTPException(status_code=400, detail="لم يتم الحصول على رمز الولوج من Facebook")
         
-    email = user_info.get("email")
-    name = user_info.get("name")
-    
-    if not email:
-        raise HTTPException(status_code=400, detail="Email not provided by Facebook")
-    
-    # Find or create user
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        # Create new user
-        random_password = str(uuid.uuid4())
-        hashed_password = get_password_hash(random_password)
-        user = User(
-            email=email,
-            hashed_password=hashed_password,
-            full_name=name,
-            is_verified=True,  # Email verified by Facebook
-            is_approved=False  # Must be approved
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    # If the account is not yet approved by an admin, deny issuing tokens
-    if not user.is_approved:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
-        )
+        # Get user info
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"https://graph.facebook.com/me?fields=id,name,email&access_token={access_token_from_facebook}")
+            user_info = response.json()
+            
+        if "error" in user_info:
+            error_msg = user_info.get("error", {}).get("message", "Failed to get user info from Facebook")
+            print(f"❌ Facebook User Info Error: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        email = user_info.get("email")
+        name = user_info.get("name")
+        
+        if not email:
+            print("❌ Email not provided by Facebook")
+            raise HTTPException(status_code=400, detail="لم تقدم Facebook بريدك الإلكتروني")
+        
+        # Find or create user
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            # Create new user
+            random_password = str(uuid.uuid4())
+            hashed_password = get_password_hash(random_password)
+            user = User(
+                email=email,
+                hashed_password=hashed_password,
+                full_name=name,
+                is_verified=True,  # Email verified by Facebook
+                is_approved=False  # Must be approved
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        
+        # If the account is not yet approved by an admin, deny issuing tokens
+        if not user.is_approved:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="الحساب بانتظار موافقة الإدارة. سيتم إشعارك عند التفعيل."
+            )
 
-    # Create JWT for approved users
-    jwt_token = create_access_token(data={
-        "sub": str(user.id), 
-        "email": user.email,
-        "is_approved": user.is_approved,
-        "is_admin": user.is_admin
-    })
-    await store_token_in_redis(user.id, jwt_token)
-
-    return {
-        "access_token": jwt_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
+        # Create JWT for approved users
+        jwt_token = create_access_token(data={
+            "sub": str(user.id), 
             "email": user.email,
-            "full_name": user.full_name,
-            "is_verified": user.is_verified,
             "is_approved": user.is_approved,
             "is_admin": user.is_admin
+        })
+        await store_token_in_redis(user.id, jwt_token)
+
+        return {
+            "access_token": jwt_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "is_verified": user.is_verified,
+                "is_approved": user.is_approved,
+                "is_admin": user.is_admin
+            }
         }
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        error_msg = str(e)
+        print(f"❌ Facebook Callback Error: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Facebook Login Error: {error_msg}")
