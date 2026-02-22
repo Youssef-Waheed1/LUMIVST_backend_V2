@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from typing import List, Optional, Dict, Any
 from datetime import date
 
@@ -12,18 +12,32 @@ router = APIRouter()
 @router.get("/technical-screener/screener")
 def get_technical_screener_data(
     db: Session = Depends(get_db),
-    limit: int = Query(100, ge=1, le=1000),
+    limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     symbol: Optional[str] = None,
     min_score: Optional[int] = Query(None, ge=0),
-    passing_only: bool = Query(False)
+    passing_only: bool = Query(False),
+    latest_only: bool = Query(True),
+    target_date: Optional[str] = Query(None, description="Filter by specific date (YYYY-MM-DD). Defaults to latest date.")
 ):
     """
     Returns technical screener rows with optional filtering.
     Endpoint path matches frontend: `/api/technical-screener/screener`.
-    Returns JSON: { data: [...], total: N }
+    By default returns ONLY the latest date's data.
+    Returns JSON: { data: [...], total: N, date: "YYYY-MM-DD" }
     """
     query = db.query(StockIndicator)
+
+    # Determine target date: explicit param > latest in DB
+    result_date = None
+    if target_date:
+        query = query.filter(StockIndicator.date == target_date)
+        result_date = target_date
+    elif latest_only:
+        latest = db.query(func.max(StockIndicator.date)).scalar()
+        if latest:
+            query = query.filter(StockIndicator.date == latest)
+            result_date = str(latest)
 
     if symbol:
         query = query.filter(StockIndicator.symbol == symbol)
@@ -34,8 +48,8 @@ def get_technical_screener_data(
     if passing_only:
         query = query.filter(StockIndicator.final_signal == True)
 
-    # Default sort by date desc, then symbol
-    query = query.order_by(desc(StockIndicator.date), StockIndicator.symbol)
+    # Sort by symbol for consistent ordering
+    query = query.order_by(StockIndicator.symbol)
 
     total = query.count()
 
@@ -43,7 +57,8 @@ def get_technical_screener_data(
 
     return {
         'data': [indicator_to_dict(ind) for ind in results],
-        'total': total
+        'total': total,
+        'date': result_date
     }
 
 def indicator_to_dict(ind: StockIndicator) -> dict:

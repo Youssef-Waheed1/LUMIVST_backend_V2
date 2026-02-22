@@ -36,7 +36,7 @@ AR_SECTION_TO_EN = {
     'القوائم المالية': 'Financial Statements',
     'لغة التقارير المرنة': 'XBRL',
     'تقرير مجلس الإدارة': 'Board Report',
-    'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات': 'ESG Report',
+    'تقرير الممارسات البيئية': 'ESG Report',
 }
 
 # Mapping Arabic periods to English (for storage consistency)
@@ -55,13 +55,12 @@ class FinancialReportsScraper:
         self.lang = lang
         self.lang_config = LANG_CONFIG[lang]
         
-        # Base URLs for each language
-        self.base_urls = {
-            'en': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30w1EVGAQHmAIVBPga-xgEGbgbmOlHEaPfAAdwNCCsPwqvEndzdAVYnAhWgMcNXvpR6Tn5SZDwyCgpKbBSNVA1KElMSSwvzVEFujE5P7cgMa8yuDI3KR-oyMTYyEg_OLFIvyA3NMIgMyA3XNdREQDj62qi/dz/d5/L0lHSkovd0RNQU5rQUVnQSEhLzROVkUvZW4!/",
-            'ar': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/"
-        }
+        # Same portal URL for both languages.
+        # The browser context locale (ar-SA / en-US) controls which language the site renders in.
+        # This was confirmed working for both EN and AR with symbol 8313.
+        BASE_PORTAL_URL = "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/"
         
-        base_long_url = self.base_urls.get(lang, self.base_urls['en'])
+        base_long_url = BASE_PORTAL_URL
         self.base_url = f"{base_long_url}?companySymbol={symbol}"
         
         # Download directory - separate by language
@@ -342,12 +341,13 @@ class FinancialReportsScraper:
                     let rowLabel = ''; 
                     if (firstCell) rowLabel = firstCell.innerText.trim();
 
-                    // --- 1. Detect Section Headers ---
-                    if (validSections.includes(text) || validSections.includes(rowLabel)) {{
-                         const sectionName = validSections.includes(text) ? text : rowLabel;
-                         currentSection = sectionName;
+                    // --- 1. Detect Section Headers (partial/substring match) ---
+                    let detectedSection = validSections.find(s => text.includes(s)) || validSections.find(s => rowLabel && rowLabel.includes(s));
+                    
+                    if (detectedSection) {{
+                         currentSection = detectedSection;
                          if (!results[currentSection]) results[currentSection] = [];
-                         if (text === sectionName) return; 
+                         return;
                     }} 
                     else if (validPeriods.includes(rowLabel)) {{}}
                     else if (rowLabel !== '') {{

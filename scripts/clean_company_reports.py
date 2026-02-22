@@ -124,11 +124,13 @@ if __name__ == "__main__":
     parser.add_argument('symbol', type=str, help='Company Symbol')
     parser.add_argument('--excel-only', action='store_true', help='Delete only Excel files and records')
     parser.add_argument('--force', action='store_true', help='Skip confirmation prompt')
-    parser.add_argument('--lang', type=str, choices=['en', 'ar'], help='Filter by language (en or ar)')
+    parser.add_argument('--lang', type=str, choices=['en', 'ar'], default='en', help='Language to delete: en or ar (default: en)')
+    parser.add_argument('--all-langs', action='store_true', help='Delete ALL languages (en + ar). USE WITH CAUTION.')
     
     args = parser.parse_args()
-    
-    args = parser.parse_args()
-    
-    clean_company_reports(args.symbol, args.excel_only, args.force, args.lang)
+
+    # --all-langs overrides --lang to delete everything
+    lang_to_delete = None if args.all_langs else args.lang
+
+    clean_company_reports(args.symbol, args.excel_only, args.force, lang_to_delete)
 
