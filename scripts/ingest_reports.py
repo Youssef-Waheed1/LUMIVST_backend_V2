@@ -44,10 +44,20 @@ def ingest_data(symbol, language='en'):
         print(f"❌ Error: {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("⚠️  Usage: python scripts/ingest_reports.py <COMPANY_SYMBOL> [language]")
-        print("Example: python scripts/ingest_reports.py 4322 ar")
-    else:
-        symbol = sys.argv[1]
-        language = sys.argv[2] if len(sys.argv) > 2 else 'en'
-        ingest_data(symbol, language=language)
+    import argparse
+    parser = argparse.ArgumentParser(description='Ingest scraped reports JSON via API')
+    parser.add_argument('symbol', type=str, help='Company Symbol', nargs='?') # Positional for backward compatibility
+    parser.add_argument('--symbol', dest='flag_symbol', type=str, help='Company Symbol')
+    parser.add_argument('lang', type=str, help='Language (en/ar)', nargs='?') # Positional for backward compatibility
+    parser.add_argument('--lang', dest='flag_lang', type=str, choices=['en', 'ar'], help='Language (en/ar)')
+    
+    args = parser.parse_args()
+    
+    final_symbol = args.flag_symbol or args.symbol
+    final_lang = args.flag_lang or args.lang or 'en'
+
+    if not final_symbol:
+        print("⚠️  Usage: python scripts/ingest_reports.py <SYMBOL> [--lang ar]")
+        sys.exit(1)
+        
+    ingest_data(final_symbol, language=final_lang)

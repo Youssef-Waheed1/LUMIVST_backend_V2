@@ -183,15 +183,21 @@ def calculate_aroon_pinescript_exact(highs: List[float], lows: List[float], peri
             aroon_down.append(None)
             continue
         
-        # Find days since highest high (most recent occurrence)
-        # Reverse the array and find first index where value equals max
-        # This gives us bars since the most recent highest
+        # Find days since highest high
+        # barssince = bars since FIRST occurrence in the window
         max_val = np.max(window_high)
-        days_since_high = np.argmax(window_high[::-1] == max_val)
+        # Find FIRST index where value equals max (from left)
+        max_indices = np.where(window_high == max_val)[0]
+        first_occurrence = max_indices[0] if len(max_indices) > 0 else 0
+        days_since_high = len(window_high) - 1 - first_occurrence
         
-        # Find days since lowest low (most recent occurrence)
+        # Find days since lowest low
+        # Same: use FIRST occurrence
         min_val = np.min(window_low)
-        days_since_low = np.argmax(window_low[::-1] == min_val)
+        # Find FIRST index where value equals min (from left)
+        min_indices = np.where(window_low == min_val)[0]
+        first_occurrence_low = min_indices[0] if len(min_indices) > 0 else 0
+        days_since_low = len(window_low) - 1 - first_occurrence_low
         
         # Calculate Aroon values
         aroon_up_val = 100.0 * (period - days_since_high) / period

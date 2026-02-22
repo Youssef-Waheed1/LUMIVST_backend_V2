@@ -5,6 +5,7 @@ Stock Indicators Calculator - الإصدار المحدث
 
 import sys
 import os
+import argparse
 import numpy as np
 import pandas as pd
 from decimal import Decimal
@@ -276,20 +277,23 @@ def calculate_and_store_indicators(db: Session, target_date: date = None, target
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Calculate Stock Indicators')
+    parser.add_argument('--date', type=str, help='Target date in YYYY-MM-DD format')
+    parser.add_argument('--symbol', type=str, help='Target symbol (optional)')
+    
+    args = parser.parse_args()
+    
     db = SessionLocal()
     try:
-        # قراءة الرمز والتاريخ من سطر الأوامر (اختياري)
-        target_symbol = sys.argv[1] if len(sys.argv) > 1 else None
         target_date = None
-        if len(sys.argv) > 2:
+        if args.date:
             try:
-                # نتوقع التاريخ بصيغة ISO YYYY-MM-DD
-                target_date = date.fromisoformat(sys.argv[2])
+                target_date = date.fromisoformat(args.date)
             except Exception:
-                print(f"❌ Invalid date format: {sys.argv[2]}. Use YYYY-MM-DD")
+                print(f"❌ Invalid date format: {args.date}. Use YYYY-MM-DD")
                 raise
 
         # تشغيل الحساب مع التاريخ والرمز (إن وُجد)
-        calculate_and_store_indicators(db, target_date=target_date, target_symbol=target_symbol)
+        calculate_and_store_indicators(db, target_date=target_date, target_symbol=args.symbol)
     finally:
         db.close()

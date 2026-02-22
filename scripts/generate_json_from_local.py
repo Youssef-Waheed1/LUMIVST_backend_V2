@@ -140,11 +140,20 @@ def generate_json_from_local(symbol, folder_suffix=""):
     print(f"✅ Generated scrape_financial_reports.json for {symbol} with {sum(len(v) for v in json_data.values())} entries.")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python generate_json_from_local.py <SYMBOL> [folder_suffix]")
-        print("Example: python generate_json_from_local.py 2222 _ar")
+    import argparse
+    parser = argparse.ArgumentParser(description='Generate JSON from local download folder')
+    parser.add_argument('symbol', type=str, help='Company Symbol', nargs='?') # Positional for backward compatibility
+    parser.add_argument('--symbol', dest='flag_symbol', type=str, help='Company Symbol')
+    parser.add_argument('suffix', type=str, help='Folder suffix (e.g. _ar)', nargs='?') # Positional for backward compatibility
+    parser.add_argument('--folder-suffix', type=str, help='Folder suffix (e.g. _ar)')
+    
+    args = parser.parse_args()
+    
+    final_symbol = args.flag_symbol or args.symbol
+    final_suffix = args.folder_suffix or args.suffix or ""
+    
+    if not final_symbol:
+        print("⚠️  Usage: python scripts/generate_json_from_local.py <SYMBOL> [--folder-suffix _ar]")
         sys.exit(1)
         
-    symbol = sys.argv[1]
-    folder_suffix = sys.argv[2] if len(sys.argv) > 2 else ""
-    generate_json_from_local(symbol, folder_suffix)
+    generate_json_from_local(final_symbol, final_suffix)

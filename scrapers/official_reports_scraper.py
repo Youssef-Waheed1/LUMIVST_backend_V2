@@ -25,7 +25,7 @@ LANG_CONFIG = {
         'tab_name': 'البيانات المالية',
         'section_header': 'القوائم المالية والتقارير',
         'section_header_fallback': 'القوائم المالية',
-        'valid_sections': ['القوائم المالية', 'لغة التقارير المرنة', 'تقرير مجلس الإدارة', 'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات'],
+        'valid_sections': ['القوائم المالية', 'لغة التقارير المرنة', 'تقرير مجلس الإدارة', 'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات', 'تقرير الممارسات البيئية والاجتماعية وحوكمة الشركات'],
         'valid_periods': ['سنوي', 'الربع الأول', 'الربع الثاني', 'الربع الثالث', 'الربع الرابع'],
         'default_section': 'تقارير عامة',
     }
@@ -36,7 +36,8 @@ AR_SECTION_TO_EN = {
     'القوائم المالية': 'Financial Statements',
     'لغة التقارير المرنة': 'XBRL',
     'تقرير مجلس الإدارة': 'Board Report',
-    'تقرير الممارسات البيئية': 'ESG Report',
+    'تقرير الممارسات البيئية والإجتماعية وحوكمة الشركات': 'ESG Report',
+    'تقرير الممارسات البيئية والاجتماعية وحوكمة الشركات': 'ESG Report',
 }
 
 # Mapping Arabic periods to English (for storage consistency)
@@ -55,12 +56,13 @@ class FinancialReportsScraper:
         self.lang = lang
         self.lang_config = LANG_CONFIG[lang]
         
-        # Same portal URL for both languages.
-        # The browser context locale (ar-SA / en-US) controls which language the site renders in.
-        # This was confirmed working for both EN and AR with symbol 8313.
-        BASE_PORTAL_URL = "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/"
+        # Base URLs for each language
+        self.base_urls = {
+            'en': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30I4EKzBEKDMKcTQzMDPxN3H19LAzdTU31w8syU8v1wwkpK8hOMgUA-oskdg!!/",
+            'ar': "https://www.saudiexchange.sa/wps/portal/saudiexchange/hidden/company-profile-main/!ut/p/z1/04_Sj9CPykssy0xPLMnMz0vMAfIjo8ziTR3NDIw8LAz83d2MXA0C3SydAl1c3Q0NvE30w1EVGAQHmAIVBPga-xgEGbgbmOlHEaPfAAdwNCCsPwqvEndzdAVYnAhWgMcNXvpR6Tn5SZDwyCgpKbBSNVA1KElMSSwvzVEFujE5P7cgMa8yuDI3KR-oyMjI1EA_ODVPvyA3NMIgMyA3XNdREQCJ_eG4/dz/d5/L0lHSkovd0RNQU5rQUVnQSEhLzROVkUvYXI!/"
+        }
         
-        base_long_url = BASE_PORTAL_URL
+        base_long_url = self.base_urls.get(lang, self.base_urls['en'])
         self.base_url = f"{base_long_url}?companySymbol={symbol}"
         
         # Download directory - separate by language
@@ -341,13 +343,12 @@ class FinancialReportsScraper:
                     let rowLabel = ''; 
                     if (firstCell) rowLabel = firstCell.innerText.trim();
 
-                    // --- 1. Detect Section Headers (partial/substring match) ---
-                    let detectedSection = validSections.find(s => text.includes(s)) || validSections.find(s => rowLabel && rowLabel.includes(s));
-                    
-                    if (detectedSection) {{
-                         currentSection = detectedSection;
+                    // --- 1. Detect Section Headers ---
+                    if (validSections.includes(text) || validSections.includes(rowLabel)) {{
+                         const sectionName = validSections.includes(text) ? text : rowLabel;
+                         currentSection = sectionName;
                          if (!results[currentSection]) results[currentSection] = [];
-                         return;
+                         if (text === sectionName) return; 
                     }} 
                     else if (validPeriods.includes(rowLabel)) {{}}
                     else if (rowLabel !== '') {{
