@@ -61,9 +61,29 @@ class PriceResponse(BaseModel):
     sma_200_4m_ago: Optional[Decimal] = None
     sma_200_5m_ago: Optional[Decimal] = None
     
+    # Additional Daily MAs
+    sma_3: Optional[Decimal] = None
+    ema_20_sma3: Optional[Decimal] = None
+    sma_4: Optional[Decimal] = None
+    sma_9: Optional[Decimal] = None
+    sma_18: Optional[Decimal] = None
+    
+    # EMA Percentages
+    price_vs_ema_10_percent: Optional[Decimal] = None
+    price_vs_ema_21_percent: Optional[Decimal] = None
+    
     # Weekly Moving Averages
+    sma_4w: Optional[Decimal] = None
+    sma_9w: Optional[Decimal] = None
+    sma_18w: Optional[Decimal] = None
     sma_30w: Optional[Decimal] = None
     sma_40w: Optional[Decimal] = None
+    
+    # CCI & Aroon
+    cci_14: Optional[Decimal] = None
+    cci_ema_20: Optional[Decimal] = None
+    aroon_up: Optional[Decimal] = None
+    aroon_down: Optional[Decimal] = None
     
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

@@ -77,9 +77,25 @@ class Price(Base):
     sma_200_4m_ago = Column(Numeric(14, 4))
     sma_200_5m_ago = Column(Numeric(14, 4))
     
+    # Additional Daily MAs
+    sma_3 = Column(Numeric(12, 2))
+    ema_20_sma3 = Column(Numeric(12, 2))
+    sma_4 = Column(Numeric(12, 2))
+    sma_9 = Column(Numeric(12, 2))
+    sma_18 = Column(Numeric(12, 2))
+    
     # Weekly Moving Averages
+    sma_4w = Column(Numeric(12, 2))
+    sma_9w = Column(Numeric(12, 2))
+    sma_18w = Column(Numeric(12, 2))
     sma_30w = Column(Numeric(14, 4))
     sma_40w = Column(Numeric(14, 4))
+    
+    # CCI & Aroon (from prices table)
+    cci_14 = Column(Numeric(12, 2))
+    cci_ema_20 = Column(Numeric(12, 2))
+    aroon_up = Column(Numeric(12, 2))
+    aroon_down = Column(Numeric(12, 2))
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
