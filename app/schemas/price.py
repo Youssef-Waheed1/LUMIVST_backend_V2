@@ -3,7 +3,12 @@ from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 
+
 class PriceResponse(BaseModel):
+    """
+    Pure OHLCV response from the prices table.
+    All technical indicators are now in stock_indicators table.
+    """
     symbol: str
     company_name: Optional[str] = None
     industry_group: Optional[str] = None
@@ -22,74 +27,13 @@ class PriceResponse(BaseModel):
     no_of_trades: Optional[int] = None
     market_cap: Optional[Decimal] = None
     trading_view_symbol: Optional[str] = None
-    
-    # Technical Indicators
-    price_minus_sma_10: Optional[Decimal] = None
-    price_minus_sma_21: Optional[Decimal] = None
-    price_minus_sma_50: Optional[Decimal] = None
-    price_minus_sma_150: Optional[Decimal] = None
-    price_minus_sma_200: Optional[Decimal] = None
-    
-    fifty_two_week_high: Optional[Decimal] = None
-    fifty_two_week_low: Optional[Decimal] = None
-    average_volume_50: Optional[int] = None
-    
-    # Technicals (Percentages)
-    price_vs_sma_10_percent: Optional[Decimal] = None
-    price_vs_sma_21_percent: Optional[Decimal] = None
-    price_vs_sma_50_percent: Optional[Decimal] = None
-    price_vs_sma_150_percent: Optional[Decimal] = None
-    price_vs_sma_200_percent: Optional[Decimal] = None
-    
-    percent_off_52w_high: Optional[Decimal] = None
-    percent_off_52w_low: Optional[Decimal] = None
-    vol_diff_50_percent: Optional[Decimal] = None
-    
-    # Moving Averages (Daily)
-    sma_10: Optional[Decimal] = None
-    sma_21: Optional[Decimal] = None
-    sma_50: Optional[Decimal] = None
-    sma_150: Optional[Decimal] = None
-    sma_200: Optional[Decimal] = None
-    ema_10: Optional[Decimal] = None
-    ema_21: Optional[Decimal] = None
-    
-    # Historical 200MA (for moving average comparisons)
-    sma_200_1m_ago: Optional[Decimal] = None
-    sma_200_2m_ago: Optional[Decimal] = None
-    sma_200_3m_ago: Optional[Decimal] = None
-    sma_200_4m_ago: Optional[Decimal] = None
-    sma_200_5m_ago: Optional[Decimal] = None
-    
-    # Additional Daily MAs
-    sma_3: Optional[Decimal] = None
-    ema_20_sma3: Optional[Decimal] = None
-    sma_4: Optional[Decimal] = None
-    sma_9: Optional[Decimal] = None
-    sma_18: Optional[Decimal] = None
-    
-    # EMA Percentages
-    price_vs_ema_10_percent: Optional[Decimal] = None
-    price_vs_ema_21_percent: Optional[Decimal] = None
-    
-    # Weekly Moving Averages
-    sma_4w: Optional[Decimal] = None
-    sma_9w: Optional[Decimal] = None
-    sma_18w: Optional[Decimal] = None
-    sma_30w: Optional[Decimal] = None
-    sma_40w: Optional[Decimal] = None
-    
-    # CCI & Aroon
-    cci_14: Optional[Decimal] = None
-    cci_ema_20: Optional[Decimal] = None
-    aroon_up: Optional[Decimal] = None
-    aroon_down: Optional[Decimal] = None
-    
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
 
 class LatestPricesResponse(BaseModel):
     date: date

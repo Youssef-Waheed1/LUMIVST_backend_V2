@@ -25,26 +25,13 @@ from scripts.indicators_data_service import IndicatorsDataService
 from scripts.calculate_rsi_indicators import convert_to_float, get_val
 
 
-def delete_old_calculations(db: Session, target_date: date = None):
-    """Delete old indicator calculations for the target date only (not old dates)"""
-    print("🧹 Cleaning up old calculations for today...")
-    
+def resolve_target_date(db: Session, target_date: date = None):
+    """Resolve the target date for calculations."""
     if target_date is None:
         result = db.execute(text("SELECT MAX(date) FROM prices"))
         target_date = result.scalar()
     
-    if target_date:
-        # Delete only for TODAY (target_date), not old historical data
-        delete_query = text("""
-            DELETE FROM stock_indicators 
-            WHERE date = :target_date
-        """)
-        result = db.execute(delete_query, {"target_date": target_date})
-        deleted_count = result.rowcount
-        db.commit()
-        print(f"✅ Deleted {deleted_count} old records for date {target_date} (will be recalculated)")
-        return deleted_count, target_date
-    return 0, None
+    return 0, target_date
 
 
 def calculate_all_indicators_for_stock(db: Session, symbol: str, target_date: date = None) -> Dict[str, Any]:
@@ -147,9 +134,9 @@ def calculate_and_store_indicators(db: Session, target_date: date = None, target
     print("=" * 60)
     
     deleted_count = 0
-    # حذف الحسابات القديمة (فقط اذا لم نحدد سهم معين)
+    # نحصل على التاريخ (لا نحذف شيئاً للحفاظ على بيانات SMAs)
     if not target_symbol:
-        deleted_count, target_date = delete_old_calculations(db, target_date)
+        deleted_count, target_date = resolve_target_date(db, target_date)
     else:
         # نحتاج لتحديد التاريخ إذا لم يُعط
         if not target_date:

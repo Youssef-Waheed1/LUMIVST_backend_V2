@@ -8,7 +8,7 @@ load_dotenv()
 class Settings:
     def __init__(self):
         # ⚠️ إزالة القيم الافتراضية المحلية في الإنتاج
-        self.DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://youssef:UtnuCIs7PL3879r7R4jjIHi5FBqoHpKy@dpg-d4k8djidbo4c73cqncl0-a.oregon-postgres.render.com/financialdb_bvyn")
+        self.DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://youssef:UtnuCIs7PL3879r7R4jjIHi5FBqoHpKy@dpg-d4k8djidbo4c73cqncl0-a.oregon-postgres.render.com/financialdb_bvyn?sslmode=require")
         self.REDIS_URL = os.getenv("REDIS_URL")
         self.CACHE_EXPIRE_SECONDS = int(os.getenv("CACHE_EXPIRE_SECONDS", "300"))
         self.STOCK_PRICE_CACHE_SECONDS = int(os.getenv("STOCK_PRICE_CACHE_SECONDS", "300"))

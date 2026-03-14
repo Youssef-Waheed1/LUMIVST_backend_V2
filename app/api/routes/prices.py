@@ -18,11 +18,12 @@ from pathlib import Path
 async def get_price_history(
     symbol: str,
     db: Session = Depends(get_db),
-    limit: int = Query(500, le=2000),
+    limit: int = Query(10000, le=50000),
 ):
     """
     Get historical OHLCV + all oscillator data for a symbol.
-    JOINs prices with stock_indicators so RSI, CCI, CFG, THE.NUMBER, STAMP are all included.
+    prices table: pure OHLCV
+    stock_indicators: everything else (RSI, MCAs, SMA, 52w, etc.)
     """
     try:
         from app.models.stock_indicators import StockIndicator
@@ -34,7 +35,7 @@ async def get_price_history(
                 (Price.symbol == StockIndicator.symbol) & (Price.date == StockIndicator.date)
             )
             .filter(Price.symbol == symbol)
-            .order_by(asc(Price.date))
+            .order_by(asc(Price.date))  # ترتيب تصاعدي من الأقدم للأحدث
             .limit(limit)
             .all()
         )
@@ -54,62 +55,70 @@ async def get_price_history(
                 "low":    f(price.low),
                 "close":  f(price.close),
                 "volume": int(price.volume_traded) if price.volume_traded is not None else 0,
-                # Price MAs (prices table)
-                "sma_10":  f(price.sma_10),
-                "sma_21":  f(price.sma_21),
-                "sma_50":  f(price.sma_50),
-                "sma_150": f(price.sma_150),
-                "sma_200": f(price.sma_200),
-                "ema_10":  f(price.ema_10),
-                "ema_21":  f(price.ema_21),
-                # RSI Daily
+                # ── Standard SMAs (from stock_indicators) ──────────────────
+                "sma_10":  f(ind.sma_10)  if ind else None,
+                "sma_21":  f(ind.sma_21)  if ind else None,
+                "sma_50":  f(ind.sma_50)  if ind else None,
+                "sma_150": f(ind.sma_150) if ind else None,
+                "sma_200": f(ind.sma_200) if ind else None,
+                # ── PineScript-exact EMAs (from stock_indicators) ───────────
+                "ema_10":  f(ind.ema10) if ind else None,
+                "ema_21":  f(ind.ema21) if ind else None,
+                # ── 52-Week & Volume Stats ──────────────────────────────────
+                "fifty_two_week_high": f(ind.fifty_two_week_high) if ind else None,
+                "fifty_two_week_low":  f(ind.fifty_two_week_low)  if ind else None,
+                "average_volume_50":   f(ind.average_volume_50)   if ind else None,
+                "vol_diff_50_percent": f(ind.vol_diff_50_percent) if ind else None,
+                "percent_off_52w_high": f(ind.percent_off_52w_high) if ind else None,
+                "percent_off_52w_low":  f(ind.percent_off_52w_low)  if ind else None,
+                # ── RSI Daily ──────────────────────────────────────────────
                 "rsi_14":    f(ind.rsi_14)    if ind else None,
                 "sma9_rsi":  f(ind.sma9_rsi)  if ind else None,
                 "wma45_rsi": f(ind.wma45_rsi) if ind else None,
-                # RSI Weekly
+                # ── RSI Weekly ─────────────────────────────────────────────
                 "rsi_w":       f(ind.rsi_w)       if ind else None,
                 "sma9_rsi_w":  f(ind.sma9_rsi_w)  if ind else None,
                 "wma45_rsi_w": f(ind.wma45_rsi_w) if ind else None,
-                # CCI Daily
+                # ── CCI Daily ──────────────────────────────────────────────
                 "cci":       f(ind.cci)       if ind else None,
                 "cci_ema20": f(ind.cci_ema20) if ind else None,
-                # CCI Weekly
+                # ── CCI Weekly ─────────────────────────────────────────────
                 "cci_w":       f(ind.cci_w)       if ind else None,
                 "cci_ema20_w": f(ind.cci_ema20_w) if ind else None,
-                # CFG Daily
+                # ── CFG Daily ──────────────────────────────────────────────
                 "cfg":       f(ind.cfg_daily) if ind else None,
                 "cfg_sma4":  f(ind.cfg_sma4)  if ind else None,
                 "cfg_ema45": f(ind.cfg_ema45) if ind else None,
-                # CFG Weekly
+                # ── CFG Weekly ─────────────────────────────────────────────
                 "cfg_w":       f(ind.cfg_w)       if ind else None,
                 "cfg_sma4_w":  f(ind.cfg_sma4_w)  if ind else None,
                 "cfg_ema45_w": f(ind.cfg_ema45_w) if ind else None,
-                # THE.NUMBER Daily
+                # ── THE.NUMBER Daily ───────────────────────────────────────
                 "the_number":    f(ind.the_number)    if ind else None,
                 "the_number_hl": f(ind.the_number_hl) if ind else None,
                 "the_number_ll": f(ind.the_number_ll) if ind else None,
-                # THE.NUMBER Weekly
+                # ── THE.NUMBER Weekly ──────────────────────────────────────
                 "the_number_w":    f(ind.the_number_w)    if ind else None,
                 "the_number_hl_w": f(ind.the_number_hl_w) if ind else None,
                 "the_number_ll_w": f(ind.the_number_ll_w) if ind else None,
-                # STAMP Daily
+                # ── STAMP Daily ────────────────────────────────────────────
                 "stamp_s9rsi":   f(ind.stamp_s9rsi)   if ind else None,
                 "stamp_e45cfg":  f(ind.stamp_e45cfg)  if ind else None,
                 "stamp_e45rsi":  f(ind.stamp_e45rsi)  if ind else None,
                 "stamp_e20sma3": f(ind.stamp_e20sma3) if ind else None,
-                # STAMP Weekly
+                # ── STAMP Weekly ───────────────────────────────────────────
                 "stamp_s9rsi_w":  f(ind.stamp_s9rsi_w)  if ind else None,
                 "stamp_e45cfg_w": f(ind.stamp_e45cfg_w) if ind else None,
                 "stamp_e45rsi_w": f(ind.stamp_e45rsi_w) if ind else None,
-                # Price MAs (indicators table)
+                # ── Price MAs from indicators ──────────────────────────────
                 "sma4":  f(ind.sma4)  if ind else None,
-                "sma9":  f(ind.sma9)  if ind else None,
+                "sma9":  f(ind.sma9_close) if ind else None,
                 "sma18": f(ind.sma18) if ind else None,
-                # Weekly price MAs
+                # ── Weekly price MAs ─────────────────────────────────────
                 "sma4_w":  f(ind.sma4_w)  if ind else None,
                 "sma9_w":  f(ind.sma9_w)  if ind else None,
                 "sma18_w": f(ind.sma18_w) if ind else None,
-                # Aroon
+                # ── Aroon ─────────────────────────────────────────────────
                 "aroon_up":   f(ind.aroon_up)   if ind else None,
                 "aroon_down": f(ind.aroon_down) if ind else None,
             })
@@ -121,6 +130,7 @@ async def get_price_history(
     except Exception as e:
         print(f"Error fetching price history for {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/latest", response_model=LatestPricesResponse)
 async def get_latest_prices(

@@ -36,67 +36,11 @@ class Price(Base):
     no_of_trades = Column(Integer)
     market_cap = Column(Numeric(20, 2))
     
-    # Technical Indicators (Red Columns)
-    price_minus_sma_10 = Column(Numeric(14, 4))
-    price_minus_sma_21 = Column(Numeric(14, 4))
-    price_minus_sma_50 = Column(Numeric(14, 4))
-    price_minus_sma_150 = Column(Numeric(14, 4))
-    price_minus_sma_200 = Column(Numeric(14, 4))
-    
-    fifty_two_week_high = Column(Numeric(14, 4))
-    fifty_two_week_low = Column(Numeric(14, 4))
-    average_volume_50 = Column(BigInteger)
-    
-    # Technical Indicators (Percentages)
-    price_vs_sma_10_percent = Column(Numeric(14, 4))
-    price_vs_sma_21_percent = Column(Numeric(14, 4))
-    price_vs_sma_50_percent = Column(Numeric(14, 4))
-    price_vs_sma_150_percent = Column(Numeric(14, 4))
-    price_vs_sma_200_percent = Column(Numeric(14, 4))
-    
-    price_vs_ema_10_percent = Column(Numeric(14, 4))
-    price_vs_ema_21_percent = Column(Numeric(14, 4))
-    
-    percent_off_52w_high = Column(Numeric(14, 4))
-    percent_off_52w_low = Column(Numeric(14, 4))
-    vol_diff_50_percent = Column(Numeric(14, 4))
-    
-    # Moving Averages (Daily)
-    sma_10 = Column(Numeric(14, 4))
-    sma_21 = Column(Numeric(14, 4))
-    sma_50 = Column(Numeric(14, 4))
-    sma_150 = Column(Numeric(14, 4))
-    sma_200 = Column(Numeric(14, 4))
-    ema_10 = Column(Numeric(14, 4))
-    ema_21 = Column(Numeric(14, 4))
-    
-    # Historical 200MA (for moving average comparisons)
-    sma_200_1m_ago = Column(Numeric(14, 4))
-    sma_200_2m_ago = Column(Numeric(14, 4))
-    sma_200_3m_ago = Column(Numeric(14, 4))
-    sma_200_4m_ago = Column(Numeric(14, 4))
-    sma_200_5m_ago = Column(Numeric(14, 4))
-    
-    # Additional Daily MAs
-    sma_3 = Column(Numeric(12, 2))
-    ema_20_sma3 = Column(Numeric(12, 2))
-    sma_4 = Column(Numeric(12, 2))
-    sma_9 = Column(Numeric(12, 2))
-    sma_18 = Column(Numeric(12, 2))
-    
-    # Weekly Moving Averages
-    sma_4w = Column(Numeric(12, 2))
-    sma_9w = Column(Numeric(12, 2))
-    sma_18w = Column(Numeric(12, 2))
-    sma_30w = Column(Numeric(14, 4))
-    sma_40w = Column(Numeric(14, 4))
-    
-    # CCI & Aroon (from prices table)
-    cci_14 = Column(Numeric(12, 2))
-    cci_ema_20 = Column(Numeric(12, 2))
-    aroon_up = Column(Numeric(12, 2))
-    aroon_down = Column(Numeric(12, 2))
-    
+    # Pure market data — technical stats moved to stock_indicators
+    # NOTE: sma_*, fifty_two_week_*, average_volume_50, price_vs_sma_*,
+    #        price_minus_sma_*, percent_off_52w_*, vol_diff_50_percent,
+    #        sma_200_Xm_ago, sma_30w, sma_40w → now in stock_indicators
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

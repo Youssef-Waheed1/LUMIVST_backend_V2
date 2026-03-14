@@ -6,7 +6,6 @@ from datetime import date
 
 from app.core.database import get_db
 from app.models.stock_indicators import StockIndicator
-from app.models.price import Price
 
 router = APIRouter()
 
@@ -22,19 +21,12 @@ def get_technical_screener_data(
     target_date: Optional[str] = Query(None, description="Filter by specific date (YYYY-MM-DD). Defaults to latest date.")
 ):
     """
-    Returns technical screener rows with optional filtering + MA values from prices table.
-    Endpoint path matches frontend: `/api/technical-screener/screener`.
-    By default returns ONLY the latest date's data.
-    
-    JOIN with prices table to get: ema_10, ema_21, sma_50, sma_150, sma_200
+    Returns technical screener rows from stock_indicators only.
+    All PineScript-exact values (EMA, SMA, CCI, Aroon, RSI, etc.) come from this single table.
     """
-    # Start with JOIN: stock_indicators + prices
-    query = db.query(StockIndicator, Price).join(
-        Price,
-        (StockIndicator.symbol == Price.symbol) & (StockIndicator.date == Price.date)
-    )
+    query = db.query(StockIndicator)
 
-    # Determine target date: explicit param > latest in DB
+    # Determine target date
     result_date = None
     if target_date:
         query = query.filter(StockIndicator.date == target_date)
@@ -54,21 +46,19 @@ def get_technical_screener_data(
     if passing_only:
         query = query.filter(StockIndicator.final_signal == True)
 
-    # Sort by symbol for consistent ordering
     query = query.order_by(StockIndicator.symbol)
 
     total = query.count()
-
     results = query.offset(offset).limit(limit).all()
 
     return {
-        'data': [indicator_to_dict_with_prices(ind, price) for ind, price in results],
+        'data': [indicator_to_dict(ind) for ind in results],
         'total': total,
         'date': result_date
     }
 
-def indicator_to_dict_with_prices(ind: StockIndicator, price: Price) -> dict:
-    """✅ تحويل المؤشرات + البيانات من prices - مع MA values من prices table"""
+def indicator_to_dict(ind: StockIndicator) -> dict:
+    """تحويل المؤشرات من stock_indicators - المصدر الوحيد للقيم الدقيقة (PineScript)"""
     
     def safe_float(value):
         return float(value) if value is not None else None
@@ -79,8 +69,7 @@ def indicator_to_dict_with_prices(ind: StockIndicator, price: Price) -> dict:
     def safe_bool(value):
         return bool(value) if value is not None else False
     
-    # Build base dict from indicator_to_dict
-    result = {
+    return {
         # ============ Basic Info ============
         'id': ind.id,
         'symbol': ind.symbol,
@@ -88,17 +77,45 @@ def indicator_to_dict_with_prices(ind: StockIndicator, price: Price) -> dict:
         'date': str(ind.date) if ind.date else None,
         'close': safe_float(ind.close),
         
-        # ============ MA VALUES FROM PRICES TABLE (with underscore - legacy) ============
-        'ema_10': safe_float(price.ema_10) if price else None,
-        'ema_21': safe_float(price.ema_21) if price else None,
-        'sma_50': safe_float(price.sma_50) if price else None,
-        'sma_150': safe_float(price.sma_150) if price else None,
-        'sma_200': safe_float(price.sma_200) if price else None,
-        
-        # ============ PineScript-exact EMA (from stock_indicators) ============
+        # ============ PineScript-exact EMA (from stock_indicators - SINGLE SOURCE) ============
+        'ema_10': safe_float(ind.ema10),   # legacy key for frontend compatibility
+        'ema_21': safe_float(ind.ema21),   # legacy key for frontend compatibility
         'ema10': safe_float(ind.ema10),
         'ema21': safe_float(ind.ema21),
-        
+
+        # ============ MARKET STATISTICS (moved from prices table) ============
+        'sma_10':  safe_float(ind.sma_10),
+        'sma_21':  safe_float(ind.sma_21),
+        'sma_50':  safe_float(ind.sma_50),
+        'sma_150': safe_float(ind.sma_150),
+        'sma_200': safe_float(ind.sma_200),
+        'sma50':   safe_float(ind.sma_50),    # aliases for frontend
+        'sma150':  safe_float(ind.sma_150),
+        'sma200':  safe_float(ind.sma_200),
+        'sma_200_1m_ago': safe_float(ind.sma_200_1m_ago),
+        'sma_200_2m_ago': safe_float(ind.sma_200_2m_ago),
+        'sma_200_3m_ago': safe_float(ind.sma_200_3m_ago),
+        'sma_200_4m_ago': safe_float(ind.sma_200_4m_ago),
+        'sma_200_5m_ago': safe_float(ind.sma_200_5m_ago),
+        'sma_30w': safe_float(ind.sma_30w),
+        'sma_40w': safe_float(ind.sma_40w),
+        'fifty_two_week_high': safe_float(ind.fifty_two_week_high),
+        'fifty_two_week_low':  safe_float(ind.fifty_two_week_low),
+        'average_volume_50':   safe_float(ind.average_volume_50),
+        'price_minus_sma_10':  safe_float(ind.price_minus_sma_10),
+        'price_minus_sma_21':  safe_float(ind.price_minus_sma_21),
+        'price_minus_sma_50':  safe_float(ind.price_minus_sma_50),
+        'price_minus_sma_150': safe_float(ind.price_minus_sma_150),
+        'price_minus_sma_200': safe_float(ind.price_minus_sma_200),
+        'price_vs_sma_10_percent':  safe_float(ind.price_vs_sma_10_percent),
+        'price_vs_sma_21_percent':  safe_float(ind.price_vs_sma_21_percent),
+        'price_vs_sma_50_percent':  safe_float(ind.price_vs_sma_50_percent),
+        'price_vs_sma_150_percent': safe_float(ind.price_vs_sma_150_percent),
+        'price_vs_sma_200_percent': safe_float(ind.price_vs_sma_200_percent),
+        'percent_off_52w_high': safe_float(ind.percent_off_52w_high),
+        'percent_off_52w_low':  safe_float(ind.percent_off_52w_low),
+        'vol_diff_50_percent':  safe_float(ind.vol_diff_50_percent),
+
         # ============ DAILY: RSI Components ============
         'rsi_14': safe_float(ind.rsi_14),
         'rsi_3': safe_float(ind.rsi_3),
@@ -144,6 +161,10 @@ def indicator_to_dict_with_prices(ind: StockIndicator, price: Price) -> dict:
         'cci_ema20': safe_float(ind.cci_ema20),
         'aroon_up': safe_float(ind.aroon_up),
         'aroon_down': safe_float(ind.aroon_down),
+        # Legacy aliases for weekly SMAs (frontend uses sma_4w etc.)
+        'sma_4w': safe_float(ind.sma4_w),
+        'sma_9w': safe_float(ind.sma9_w),
+        'sma_18w': safe_float(ind.sma18_w),
         
         # ============ WEEKLY: RSI Components ============
         'rsi_w': safe_float(ind.rsi_w),                        # ✅ كان ناقص

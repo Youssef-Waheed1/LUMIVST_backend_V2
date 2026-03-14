@@ -133,12 +133,6 @@ def run_calculations_only(target_date_str=None):
         try:
             from scripts.calculate_ibd_metrics import IBDMetricsCalculator
             
-            logger.info("🧹 Deleting old IBD records for this date...")
-            delete_ibd = text("DELETE FROM rs_daily_v2 WHERE date = :target_date")
-            db.execute(delete_ibd, {"target_date": market_date})
-            db.commit()
-            logger.info("✅ Deleted old IBD records")
-            
             logger.info("🧮 Calculating Group RS and Acc/Dis ratings...")
             ibd_calc = IBDMetricsCalculator(db)
             df_ibd_prices = ibd_calc.load_data(lookback_days=230)
@@ -213,11 +207,12 @@ def run_calculations_only(target_date_str=None):
         try:
             from scripts.calculate_stock_indicators import calculate_and_store_indicators
             
-            logger.info("🧹 Deleting old Stock Indicator records for this date...")
-            delete_si = text("DELETE FROM stock_indicators WHERE date = :target_date")
-            db.execute(delete_si, {"target_date": market_date})
-            db.commit()
-            logger.info("✅ Deleted old Stock Indicator records")
+            from scripts.calculate_stock_indicators import calculate_and_store_indicators
+            
+            # NOTE: We no longer delete old stock_indicator records here because 
+            # Phase 3 (TechnicalCalculator) just updated them with market stats.
+            # calculate_and_store_indicators uses UPSERT and will only update its specific fields.
+
             
             logger.info("🧮 Calculating and storing Stock Technical Indicators...")
             processed, errors, successful = calculate_and_store_indicators(db, market_date)

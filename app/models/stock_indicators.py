@@ -150,6 +150,49 @@ class StockIndicator(Base):
     cci_gt_100 = Column(Boolean, default=False)
     cci_ema20_gt_0_daily = Column(Boolean, default=False)
     
+    # ============ 6. MARKET STATISTICS (formerly in prices table) ============
+    # Standard Daily SMAs (SMA 10/21/50/150/200)
+    sma_10  = Column(Numeric(14, 4), nullable=True)
+    sma_21  = Column(Numeric(14, 4), nullable=True)
+    sma_50  = Column(Numeric(14, 4), nullable=True)
+    sma_150 = Column(Numeric(14, 4), nullable=True)
+    sma_200 = Column(Numeric(14, 4), nullable=True)
+
+    # Historical 200MA (for trend conditions)
+    sma_200_1m_ago = Column(Numeric(14, 4), nullable=True)
+    sma_200_2m_ago = Column(Numeric(14, 4), nullable=True)
+    sma_200_3m_ago = Column(Numeric(14, 4), nullable=True)
+    sma_200_4m_ago = Column(Numeric(14, 4), nullable=True)
+    sma_200_5m_ago = Column(Numeric(14, 4), nullable=True)
+
+    # Weekly SMAs (30W and 40W)
+    sma_30w = Column(Numeric(14, 4), nullable=True)
+    sma_40w = Column(Numeric(14, 4), nullable=True)
+
+    # 52-Week High / Low & Volume Stats
+    fifty_two_week_high = Column(Numeric(14, 4), nullable=True)
+    fifty_two_week_low  = Column(Numeric(14, 4), nullable=True)
+    average_volume_50   = Column(Numeric(20, 2), nullable=True)
+
+    # Price vs SMA (Absolute difference)
+    price_minus_sma_10  = Column(Numeric(14, 4), nullable=True)
+    price_minus_sma_21  = Column(Numeric(14, 4), nullable=True)
+    price_minus_sma_50  = Column(Numeric(14, 4), nullable=True)
+    price_minus_sma_150 = Column(Numeric(14, 4), nullable=True)
+    price_minus_sma_200 = Column(Numeric(14, 4), nullable=True)
+
+    # Price vs SMA (Percentage)
+    price_vs_sma_10_percent  = Column(Numeric(14, 4), nullable=True)
+    price_vs_sma_21_percent  = Column(Numeric(14, 4), nullable=True)
+    price_vs_sma_50_percent  = Column(Numeric(14, 4), nullable=True)
+    price_vs_sma_150_percent = Column(Numeric(14, 4), nullable=True)
+    price_vs_sma_200_percent = Column(Numeric(14, 4), nullable=True)
+
+    # Off High / Low & Volume vs Average
+    percent_off_52w_high = Column(Numeric(14, 4), nullable=True)
+    percent_off_52w_low  = Column(Numeric(14, 4), nullable=True)
+    vol_diff_50_percent  = Column(Numeric(14, 4), nullable=True)
+
     # ============ MA COMPARISON CONDITIONS ============
     ema10_gt_sma50 = Column(Boolean, default=False)             # ✅ EMA10 > SMA50
     ema10_gt_sma200 = Column(Boolean, default=False)            # ✅ EMA10 > SMA200
