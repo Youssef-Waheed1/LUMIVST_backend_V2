@@ -54,6 +54,10 @@ class TechnicalCalculator:
             'percent_off_52w_high': 'NUMERIC(14, 4)',
             'percent_off_52w_low':  'NUMERIC(14, 4)',
             'vol_diff_50_percent':  'NUMERIC(14, 4)',
+            # Power Play columns
+            'percent_change_15d':   'NUMERIC(14, 4)',
+            'percent_change_20d':   'NUMERIC(14, 4)',
+            'percent_change_126d':  'NUMERIC(14, 4)',
         }
 
         for col_name, col_type in columns_to_add.items():
@@ -115,6 +119,18 @@ class TechnicalCalculator:
         # 4. Change
         logger.info("   ... حساب التغير (Change)")
         df['change'] = grouped['close'].transform(lambda x: x.diff())
+
+        # 4b. Power Play: حساب التغيرات المطلوبة
+        logger.info("   ... حساب percent_change_20d و percent_change_15d و percent_change_126d")
+        df['percent_change_15d'] = grouped['close'].transform(
+            lambda x: ((x - x.shift(15)) / x.shift(15).replace(0, np.nan)) * 100
+        )
+        df['percent_change_20d'] = grouped['close'].transform(
+            lambda x: ((x - x.shift(20)) / x.shift(20).replace(0, np.nan)) * 100
+        )
+        df['percent_change_126d'] = grouped['close'].transform(
+            lambda x: ((x - x.shift(126)) / x.shift(126).replace(0, np.nan)) * 100
+        )
 
         # 5. Historical 200MA
         logger.info("   ... حساب 200MA التاريخية")
@@ -239,6 +255,9 @@ class TechnicalCalculator:
                         'pct_off_high': fv('percent_off_52w_high'),
                         'pct_off_low':  fv('percent_off_52w_low'),
                         'vol_diff':     fv('vol_diff_50_percent'),
+                        'pct_chg_15d':  fv('percent_change_15d'),
+                        'pct_chg_20d':  fv('percent_change_20d'),
+                        'pct_chg_126d': fv('percent_change_126d'),
                     }
 
                     conn.execute(text("""
@@ -252,7 +271,8 @@ class TechnicalCalculator:
                             price_minus_sma_150, price_minus_sma_200,
                             price_vs_sma_10_percent, price_vs_sma_21_percent, price_vs_sma_50_percent,
                             price_vs_sma_150_percent, price_vs_sma_200_percent,
-                            percent_off_52w_high, percent_off_52w_low, vol_diff_50_percent
+                            percent_off_52w_high, percent_off_52w_low, vol_diff_50_percent,
+                            percent_change_15d, percent_change_20d, percent_change_126d
                         ) VALUES (
                             :symbol, :date,
                             :sma_10, :sma_21, :sma_50, :sma_150, :sma_200,
@@ -261,7 +281,8 @@ class TechnicalCalculator:
                             :h52, :l52, :avg_vol,
                             :pm10, :pm21, :pm50, :pm150, :pm200,
                             :p10_pct, :p21_pct, :p50_pct, :p150_pct, :p200_pct,
-                            :pct_off_high, :pct_off_low, :vol_diff
+                            :pct_off_high, :pct_off_low, :vol_diff,
+                            :pct_chg_15d, :pct_chg_20d, :pct_chg_126d
                         )
                         ON CONFLICT (symbol, date) DO UPDATE SET
                             sma_10  = EXCLUDED.sma_10,
@@ -291,7 +312,10 @@ class TechnicalCalculator:
                             price_vs_sma_200_percent = EXCLUDED.price_vs_sma_200_percent,
                             percent_off_52w_high = EXCLUDED.percent_off_52w_high,
                             percent_off_52w_low  = EXCLUDED.percent_off_52w_low,
-                            vol_diff_50_percent  = EXCLUDED.vol_diff_50_percent
+                            vol_diff_50_percent  = EXCLUDED.vol_diff_50_percent,
+                            percent_change_15d   = EXCLUDED.percent_change_15d,
+                            percent_change_20d   = EXCLUDED.percent_change_20d,
+                            percent_change_126d  = EXCLUDED.percent_change_126d
                     """), si_params)
 
                 trans.commit()

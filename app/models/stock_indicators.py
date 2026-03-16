@@ -193,6 +193,11 @@ class StockIndicator(Base):
     percent_off_52w_low  = Column(Numeric(14, 4), nullable=True)
     vol_diff_50_percent  = Column(Numeric(14, 4), nullable=True)
 
+    # Power Play: % Change over N days
+    percent_change_15d  = Column(Numeric(14, 4), nullable=True)   # % Change last 15 days
+    percent_change_20d  = Column(Numeric(14, 4), nullable=True)   # % Change last 20 days (1 month)
+    percent_change_126d = Column(Numeric(14, 4), nullable=True)   # % Change last 126 days (6 months)
+
     # ============ MA COMPARISON CONDITIONS ============
     ema10_gt_sma50 = Column(Boolean, default=False)             # ✅ EMA10 > SMA50
     ema10_gt_sma200 = Column(Boolean, default=False)            # ✅ EMA10 > SMA200
