@@ -14,7 +14,7 @@ engine = create_engine(
     pool_timeout=30,
     pool_recycle=3600,      # ⬅️ ساعة واحدة
     pool_pre_ping=True,     # ⬅️ مهم للإنتاج
-    echo=settings.DEBUG     # ⬅️ التشغيل فقط في التطوير
+    echo=False              # ⬅️ معطّل عشان مايملاش الـ terminal رسايل
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -24,7 +24,7 @@ class IndustryGroupResponse(IndustryGroupBase):
     date: date
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class IndustryGroupStockResponse(PriceResponse):
     rs_rating: Optional[int] = None
